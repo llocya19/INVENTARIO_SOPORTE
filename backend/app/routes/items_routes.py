@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify
 from app.core.security import require_auth, require_admin
 from app.models.item_model import (
     list_item_types, create_item_with_specs, get_item_detail,
-    upsert_attribute_and_value, add_photo
+    upsert_attribute_and_value, add_photo, create_item_type, suggest_next_code
 )
 from app.models.area_model import get_area_info
 
@@ -14,6 +14,19 @@ bp = Blueprint("items", __name__, url_prefix="/api")
 def item_types():
     clase = request.args.get("clase")
     return jsonify(list_item_types(request.claims["username"], clase))
+
+# NUEVO: crear tipo (usado por el modal "+ Nuevo tipo")
+@bp.post("/item-types")
+@require_auth
+@require_admin
+def create_item_type_route():
+    d = request.get_json(force=True)
+    clase = (d.get("clase") or "").strip().upper()
+    nombre = (d.get("nombre") or "").strip()
+    if clase not in ("COMPONENTE","PERIFERICO") or not nombre:
+        return {"error":"clase y nombre requeridos"}, 400
+    tid = create_item_type(request.claims["username"], clase, nombre)
+    return {"id": tid, "clase": clase, "nombre": nombre}
 
 @bp.post("/items")
 @require_auth
@@ -42,8 +55,10 @@ def create_item():
 @bp.get("/items/<int:item_id>")
 @require_auth
 def item_detail(item_id: int):
+    from app.models.item_model import get_item_detail
     data = get_item_detail(request.claims["username"], item_id)
-    if not data: return {"error":"No encontrado"}, 404
+    if not data:
+        return {"error": "No encontrado"}, 404
     return jsonify(data)
 
 @bp.post("/items/<int:item_id>/specs")
@@ -83,6 +98,5 @@ def next_code():
     area_id = request.args.get("area_id")
     if not clase or not tipo or not area_id:
         return {"error":"clase, tipo, area_id requeridos"}, 400
-    from app.models.item_model import suggest_next_code
     code = suggest_next_code(request.claims["username"], clase, tipo, int(area_id))
     return {"next_code": code}

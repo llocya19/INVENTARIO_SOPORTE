@@ -1,12 +1,13 @@
 // src/App.tsx
 import { Routes, Route, Link } from "react-router-dom";
 import Login from "./pages/Login";
-// import Dashboard from "./pages/Dashboard";  // <- ya no en la home
 import Users from "./pages/Users";
-import Areas from "./pages/Areas";       // <- nuevo
-import AreaView from "./pages/AreaView"; // <- detalle del área (tabs)
+import Areas from "./pages/Areas";
+import AreaView from "./pages/AreaView";
+import ItemDetailPage from "./pages/ItemDetail"; // 👈 importa la ficha
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { getUser, logout } from "./services/authService";
+import EquipoView from "./pages/EquipoView";
 
 function Nav() {
   const u = getUser();
@@ -57,30 +58,61 @@ export default function App() {
         <Route path="/login" element={<Login />} />
 
         {/* HOME -> Áreas */}
-        <Route path="/" element={
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Areas />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Áreas */}
+        <Route
+          path="/areas"
+          element={
+            <ProtectedRoute>
+              <Areas />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/areas/:id"
+          element={
+            <ProtectedRoute>
+              <AreaView />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* 👇 Ruta para ver ficha */}
+        <Route
+          path="/items/:id"
+          element={
+            <ProtectedRoute>
+              <ItemDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="/equipos/:id" element={
           <ProtectedRoute>
-            <Areas />
+            <EquipoView />
           </ProtectedRoute>
         } />
 
-        {/* rutas de áreas */}
-        <Route path="/areas" element={
-          <ProtectedRoute>
-            <Areas />
-          </ProtectedRoute>
-        } />
-        <Route path="/areas/:id" element={
-          <ProtectedRoute>
-            <AreaView />
-          </ProtectedRoute>
-        } />
+        {/* Admin */}
+        <Route
+          path="/users"
+          element={
+            <ProtectedRoute roles={["ADMIN"]}>
+              <Users />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* admin */}
-        <Route path="/users" element={
-          <ProtectedRoute roles={["ADMIN"]}>
-            <Users />
-          </ProtectedRoute>
-        } />
+        {/* 404 opcional */}
+        <Route path="*" element={<div className="p-6">Página no encontrada</div>} />
       </Routes>
     </>
   );
