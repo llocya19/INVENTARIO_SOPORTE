@@ -1,4 +1,3 @@
-# backend/app/models/area_model.py
 from typing import Optional
 from app.db import get_conn
 
@@ -7,9 +6,6 @@ from app.db import get_conn
 # -------------------------
 
 def list_areas(app_user: Optional[str]):
-    """
-    Lista todas las áreas (raíz y subáreas).
-    """
     SQL = """
     SELECT area_id, area_nombre, area_padre_id
     FROM inv.areas
@@ -22,9 +18,6 @@ def list_areas(app_user: Optional[str]):
 
 
 def list_root_areas(app_user: Optional[str]):
-    """
-    Lista solo áreas raíz (sin padre).
-    """
     with get_conn(app_user) as (conn, cur):
         cur.execute("""
             SELECT area_id, area_nombre
@@ -36,39 +29,106 @@ def list_root_areas(app_user: Optional[str]):
     return [{"id": r[0], "nombre": r[1]} for r in rows]
 
 
-def list_area_items(app_user: str, area_id: int, clase: Optional[str], estado: Optional[str]):
+def list_area_items(
+    app_user: str,
+    area_id: int,
+    clase: Optional[str],
+    estado: Optional[str],
+    page: int = 1,
+    size: int = 10,
+    tipo_nombre: Optional[str] = None,
+    fecha_desde: Optional[str] = None,  # 'YYYY-MM-DD'
+    fecha_hasta: Optional[str] = None,  # 'YYYY-MM-DD'
+):
     """
-    Lista ítems en ALMACEN por área (usa la vista vw_items_en_almacen).
-    Puedes filtrar por clase (COMPONENTE | PERIFERICO) y estado.
+    Lista ítems del área con paginación y filtros.
+    Filtros:
+      - clase: COMPONENTE | PERIFERICO
+      - estado: ALMACEN | EN_USO | ...
+      - tipo_nombre: nombre del tipo (p.ej. DISCO, MEMORIA)
+      - fecha_desde/fecha_hasta: filtra por created_at (inclusive)
+    Devuelve: { items: [...], total, page, size }
     """
+    p = max(1, int(page or 1))
+    s = min(100, max(1, int(size or 10)))
+    off = (p - 1) * s
+
     base_sql = """
-      SELECT item_id, item_codigo, clase, tipo, estado
-      FROM inv.vw_items_en_almacen
-      WHERE area_id = %s
+      SELECT
+        v.item_id,
+        v.item_codigo,
+        v.clase,
+        v.tipo,
+        v.estado,
+        v.created_at,
+        e.equipo_id,
+        e.equipo_codigo,
+        e.equipo_nombre,
+        v.ficha,
+        COUNT(*) OVER() AS total_rows
+      FROM inv.vw_items_con_ficha_y_fotos v
+      LEFT JOIN inv.equipo_items ei ON ei.item_id = v.item_id
+      LEFT JOIN inv.equipos      e  ON e.equipo_id = ei.equipo_id
+      WHERE v.area_id = %s
     """
     params = [area_id]
+
     if clase:
-        base_sql += " AND clase = %s"
+        base_sql += " AND v.clase = %s"
         params.append(clase)
+
     if estado:
-        base_sql += " AND estado = %s"
+        base_sql += " AND v.estado = %s"
         params.append(estado)
-    base_sql += " ORDER BY lower(tipo), item_codigo"
+
+    if tipo_nombre:
+        base_sql += " AND lower(v.tipo) = lower(%s)"
+        params.append(tipo_nombre)
+
+    if fecha_desde:
+        base_sql += " AND v.created_at::date >= %s::date"
+        params.append(fecha_desde)
+
+    if fecha_hasta:
+        base_sql += " AND v.created_at::date <= %s::date"
+        params.append(fecha_hasta)
+
+    base_sql += """
+      ORDER BY
+        CASE v.estado WHEN 'EN_USO' THEN 0 ELSE 1 END,
+        lower(v.tipo),
+        v.item_codigo
+      LIMIT %s OFFSET %s
+    """
+    params.extend([s, off])
 
     with get_conn(app_user) as (conn, cur):
         cur.execute(base_sql, params)
         rows = cur.fetchall()
 
-    return [
-        {"item_id": r[0], "item_codigo": r[1], "clase": r[2], "tipo": r[3], "estado": r[4]}
-        for r in rows
-    ]
+    items = []
+    total = 0
+    for r in rows:
+        total = r[10]  # total_rows
+        items.append({
+            "item_id": r[0],
+            "item_codigo": r[1],
+            "clase": r[2],
+            "tipo": r[3],
+            "estado": r[4],
+            "created_at": r[5],
+            "equipo": None if r[6] is None else {
+                "equipo_id": r[6],
+                "equipo_codigo": r[7],
+                "equipo_nombre": r[8],
+            },
+            "ficha": r[9] or {},
+        })
+
+    return {"items": items, "total": int(total or 0), "page": p, "size": s}
 
 
 def list_area_equipos(app_user: str, area_id: int):
-    """
-    Lista equipos de un área.
-    """
     SQL = """
     SELECT e.equipo_id, e.equipo_codigo, e.equipo_nombre, e.equipo_estado, e.equipo_usuario_final
     FROM inv.equipos e
@@ -87,18 +147,15 @@ def list_area_equipos(app_user: str, area_id: int):
         "usuario_final": r[4],
     } for r in rows]
 
+
 # -----------------------------------------
-# Altas con SP flexible (raíz o cualquier padre)
+# Altas
 # -----------------------------------------
 
 def create_root_area(app_user: str, nombre: str) -> int:
-    """
-    Crea (o asegura) un área raíz con ese nombre usando inv.sp_area_upsert_any.
-    """
     with get_conn(app_user) as (conn, cur):
         area_id = None
         cur.execute("CALL inv.sp_area_upsert_any(%s, %s, %s)", (area_id, nombre, None))
-        # recuperamos id (por si el INOUT no vuelve populado)
         cur.execute("""
           SELECT area_id FROM inv.areas
           WHERE area_padre_id IS NULL AND lower(area_nombre)=lower(%s)
@@ -109,9 +166,6 @@ def create_root_area(app_user: str, nombre: str) -> int:
 
 
 def create_sub_area(app_user: str, nombre: str, padre_id: int) -> int:
-    """
-    Crea (o asegura) una subárea bajo padre_id (padre puede ser raíz o subárea).
-    """
     with get_conn(app_user) as (conn, cur):
         area_id = None
         cur.execute("CALL inv.sp_area_upsert_any(%s, %s, %s)", (area_id, nombre, padre_id))
@@ -126,18 +180,13 @@ def create_sub_area(app_user: str, nombre: str, padre_id: int) -> int:
 
 
 def get_area_info(app_user: str, area_id: int):
-    """
-    Información de un área: datos, cadena de ancestros (hasta la raíz) y subáreas directas.
-    """
     with get_conn(app_user) as (conn, cur):
-        # área actual
         cur.execute("SELECT area_id, area_nombre, area_padre_id FROM inv.areas WHERE area_id=%s", (area_id,))
         a = cur.fetchone()
         if not a:
             return None
         area = {"id": a[0], "nombre": a[1], "padre_id": a[2]}
 
-        # ancestros (padre -> ... -> raíz) con CTE recursivo
         cur.execute("""
         WITH RECURSIVE anc AS (
           SELECT area_id, area_nombre, area_padre_id
@@ -151,9 +200,8 @@ def get_area_info(app_user: str, area_id: int):
         FROM anc WHERE area_id <> %s
         """, (area_id, area_id))
         rows = cur.fetchall()
-        ancestors = [{"id": r[0], "nombre": r[1], "padre_id": r[2]} for r in rows][::-1]  # raíz -> hoja
+        ancestors = [{"id": r[0], "nombre": r[1], "padre_id": r[2]} for r in rows][::-1]
 
-        # hijos directos
         cur.execute("""
           SELECT area_id, area_nombre FROM inv.areas
           WHERE area_padre_id = %s

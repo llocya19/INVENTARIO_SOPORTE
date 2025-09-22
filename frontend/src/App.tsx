@@ -4,10 +4,13 @@ import Login from "./pages/Login";
 import Users from "./pages/Users";
 import Areas from "./pages/Areas";
 import AreaView from "./pages/AreaView";
-import ItemDetailPage from "./pages/ItemDetail"; // 👈 importa la ficha
+import ItemDetailPage from "./pages/ItemDetail";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { getUser, logout } from "./services/authService";
-import EquipoView from "./pages/EquipoView";
+
+// Equipos
+import EquipoNuevo from "./pages/EquipoNuevo";      // crear equipo (PC) dentro de un área
+import EquipoDetalle from "./pages/EquipoDetalle";  // ver detalle de un equipo
 
 function Nav() {
   const u = getUser();
@@ -85,7 +88,7 @@ export default function App() {
           }
         />
 
-        {/* 👇 Ruta para ver ficha */}
+        {/* Ficha de ítem */}
         <Route
           path="/items/:id"
           element={
@@ -95,11 +98,25 @@ export default function App() {
           }
         />
 
-        <Route path="/equipos/:id" element={
-          <ProtectedRoute>
-            <EquipoView />
-          </ProtectedRoute>
-        } />
+        {/* Crear equipo (PC) dentro de un área */}
+        <Route
+          path="/areas/:areaId/equipos/nuevo"
+          element={
+            <ProtectedRoute>
+              <EquipoNuevo />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* 🔧 Detalle del equipo (esta ruta faltaba) */}
+        <Route
+          path="/equipos/:id"
+          element={
+            <ProtectedRoute>
+              <EquipoDetalle />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Admin */}
         <Route
@@ -111,7 +128,7 @@ export default function App() {
           }
         />
 
-        {/* 404 opcional */}
+        {/* 404 */}
         <Route path="*" element={<div className="p-6">Página no encontrada</div>} />
       </Routes>
     </>

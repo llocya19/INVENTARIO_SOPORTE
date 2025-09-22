@@ -1,4 +1,3 @@
-# backend/app/routes/areas_routes.py
 from flask import Blueprint, jsonify, request
 from app.core.security import require_auth, require_admin
 from app.models.area_model import (
@@ -7,8 +6,6 @@ from app.models.area_model import (
 )
 
 bp = Blueprint("areas", __name__, url_prefix="/api/areas")
-
-# -------- lecturas --------
 
 @bp.get("")
 @require_auth
@@ -23,9 +20,19 @@ def get_roots():
 @bp.get("/<int:area_id>/items")
 @require_auth
 def get_area_items(area_id: int):
-    clase = request.args.get("clase")   # COMPONENTE | PERIFERICO | None
-    estado = request.args.get("estado") # ALMACEN | EN_USO | ...
-    return jsonify(list_area_items(request.claims["username"], area_id, clase, estado))
+    clase = request.args.get("clase")           # COMPONENTE | PERIFERICO | None
+    estado = request.args.get("estado")         # ALMACEN | EN_USO | ...
+    page  = request.args.get("page", type=int, default=1)
+    size  = request.args.get("size", type=int, default=10)
+    tipo  = request.args.get("tipo")            # nombre del tipo (p.ej. DISCO)
+    fdes  = request.args.get("desde")           # YYYY-MM-DD
+    fhas  = request.args.get("hasta")           # YYYY-MM-DD
+
+    data = list_area_items(
+        request.claims["username"],
+        area_id, clase, estado, page, size, tipo, fdes, fhas
+    )
+    return jsonify(data)
 
 @bp.get("/<int:area_id>/equipos")
 @require_auth
@@ -39,8 +46,6 @@ def area_info(area_id: int):
     if not info:
         return {"error": "Área no encontrada"}, 404
     return jsonify(info)
-
-# -------- altas (solo ADMIN) --------
 
 @bp.post("/root")
 @require_auth
