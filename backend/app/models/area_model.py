@@ -1,4 +1,5 @@
-from typing import Optional
+# app/models/area_model.py
+from typing import Optional, Any, List, Dict
 from app.db import get_conn
 
 # -------------------------
@@ -40,15 +41,6 @@ def list_area_items(
     fecha_desde: Optional[str] = None,  # 'YYYY-MM-DD'
     fecha_hasta: Optional[str] = None,  # 'YYYY-MM-DD'
 ):
-    """
-    Lista ítems del área con paginación y filtros.
-    Filtros:
-      - clase: COMPONENTE | PERIFERICO
-      - estado: ALMACEN | EN_USO | ...
-      - tipo_nombre: nombre del tipo (p.ej. DISCO, MEMORIA)
-      - fecha_desde/fecha_hasta: filtra por created_at (inclusive)
-    Devuelve: { items: [...], total, page, size }
-    """
     p = max(1, int(page or 1))
     s = min(100, max(1, int(size or 10)))
     off = (p - 1) * s
@@ -109,7 +101,7 @@ def list_area_items(
     items = []
     total = 0
     for r in rows:
-        total = r[10]  # total_rows
+        total = r[10]
         items.append({
             "item_id": r[0],
             "item_codigo": r[1],
@@ -128,24 +120,22 @@ def list_area_items(
     return {"items": items, "total": int(total or 0), "page": p, "size": s}
 
 
-def list_area_equipos(app_user: str, area_id: int):
-    SQL = """
-    SELECT e.equipo_id, e.equipo_codigo, e.equipo_nombre, e.equipo_estado, e.equipo_usuario_final
-    FROM inv.equipos e
-    WHERE e.equipo_area_id = %s
-    ORDER BY e.equipo_codigo
-    """
-    with get_conn(app_user) as (conn, cur):
-        cur.execute(SQL, (area_id,))
-        rows = cur.fetchall()
-
-    return [{
-        "equipo_id": r[0],
-        "equipo_codigo": r[1],
-        "equipo_nombre": r[2],
-        "estado": r[3],
-        "usuario_final": r[4],
-    } for r in rows]
+# -----------------------------------------
+# Equipos (paginado + filtros para la vista del área)
+# -----------------------------------------
+def list_area_equipos_paged(
+    app_user: str,
+    area_id: int,
+    estado: Optional[str],
+    q: Optional[str],
+    fdesde: Optional[str],
+    fhasta: Optional[str],
+    page: int = 1,
+    size: int = 10,
+    orden: Optional[str] = None,
+) -> Dict[str, Any]:
+    from app.models.equipo_model import list_area_equipos_paged as _inner
+    return _inner(app_user, area_id, estado, q, fdesde, fhasta, page, size, orden)
 
 
 # -----------------------------------------

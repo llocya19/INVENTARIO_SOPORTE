@@ -27,6 +27,7 @@ type EquipoRow = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+type EquiposPage = { items: EquipoRow[]; total: number; page: number; size: number };
 
 type ItemType = { id: number; clase: Clase; nombre: string };
 
@@ -48,11 +49,11 @@ export default function AreaView() {
 
   const [tab, setTab] = useState<"COMPONENTE" | "PERIFERICO" | "EQUIPOS">("COMPONENTE");
 
-  // paginación por pestaña
+  // paginación por pestaña (items)
   const [compPage, setCompPage] = useState<ItemsPage>({ items: [], total: 0, page: 1, size: 10 });
   const [periPage, setPeriPage] = useState<ItemsPage>({ items: [], total: 0, page: 1, size: 10 });
 
-  // filtros por pestaña
+  // filtros por pestaña (items)
   const [compFilter, setCompFilter] = useState<{ tipo: string; desde: string; hasta: string }>({
     tipo: "",
     desde: "",
@@ -64,7 +65,14 @@ export default function AreaView() {
     hasta: "",
   });
 
-  const [eqs, setEqs] = useState<EquipoRow[]>([]);
+  // Equipos: paginación y filtros
+  const [eqPage, setEqPage] = useState<EquiposPage>({ items: [], total: 0, page: 1, size: 10 });
+  const [eqFilter, setEqFilter] = useState<{ estado: string; desde: string; hasta: string }>({
+    estado: "",
+    desde: "",
+    hasta: "",
+  });
+
   const [typesC, setTypesC] = useState<ItemType[]>([]);
   const [typesP, setTypesP] = useState<ItemType[]>([]);
   const [info, setInfo] = useState<AreaInfo | null>(null);
@@ -86,6 +94,9 @@ export default function AreaView() {
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
+  // menú "+ Nuevo ▾"
+  const [openMenu, setOpenMenu] = useState(false);
+
   // modal "Nuevo campo"
   const [showNewAttr, setShowNewAttr] = useState(false);
   const [newAttr, setNewAttr] = useState<{ nombre: string; data_type: Attr["data_type"] }>({
@@ -103,23 +114,21 @@ export default function AreaView() {
   const loadStatic = async () => {
     setMsg(null);
     try {
-      const [e, tC, tP, i] = await Promise.all([
-        http.get<EquipoRow[]>(`/api/areas/${areaId}/equipos`),
+      const [tC, tP, i] = await Promise.all([
         http.get<ItemType[]>(`/api/item-types?clase=COMPONENTE`),
         http.get<ItemType[]>(`/api/item-types?clase=PERIFERICO`),
         http.get<AreaInfo>(`/api/areas/${areaId}/info`),
       ]);
-      setEqs(e.data);
-      setTypesC(tC.data);
-      setTypesP(tP.data);
-      setInfo(i.data);
+      setTypesC(tC.data || []);
+      setTypesP(tP.data || []);
+      setInfo(i.data || null);
     } catch (e: any) {
       setMsg(e?.response?.data?.error || "No se pudo cargar datos del área");
     }
   };
 
-  /* ---------- Carga paginada (servidor) ---------- */
-  const loadPaged = async (
+  /* ---------- Carga paginada (ítems) ---------- */
+  const loadPagedItems = async (
     clase: Clase,
     page = 1,
     size = 10,
@@ -131,16 +140,47 @@ export default function AreaView() {
     if (filtro?.hasta) params.hasta = filtro.hasta;
 
     const r = await http.get<ItemsPage>(`/api/areas/${areaId}/items`, { params });
-    if (clase === "COMPONENTE") setCompPage(r.data);
-    else setPeriPage(r.data);
+    const data: ItemsPage = r.data || { items: [], total: 0, page, size };
+    if (clase === "COMPONENTE") setCompPage(data);
+    else setPeriPage(data);
+  };
+
+  /* ---------- Carga paginada (equipos) ---------- */
+  const loadPagedEquipos = async (
+    page = 1,
+    size = 10,
+    filtro?: { estado?: string; desde?: string; hasta?: string }
+  ) => {
+    const params: any = { page, size };
+    if (filtro?.estado) params.estado = filtro.estado;
+    if (filtro?.desde) params.desde = filtro.desde;
+    if (filtro?.hasta) params.hasta = filtro.hasta;
+
+    const r = await http.get<any>(`/api/areas/${areaId}/equipos`, { params });
+
+    // Soporta formato nuevo paginado o lista simple
+    let data: EquiposPage;
+    if (Array.isArray(r.data)) {
+      data = { items: r.data, total: r.data.length, page, size };
+    } else {
+      const d = r.data || {};
+      data = {
+        items: d.items || [],
+        total: Number(d.total || 0),
+        page: Number(d.page || page),
+        size: Number(d.size || size),
+      };
+    }
+    setEqPage(data);
   };
 
   useEffect(() => {
     if (!Number.isFinite(areaId) || areaId <= 0) return;
     loadStatic();
-    // primera página de cada pestaña
-    loadPaged("COMPONENTE", 1, compPage.size, compFilter);
-    loadPaged("PERIFERICO", 1, periPage.size, periFilter);
+    // primeras páginas
+    loadPagedItems("COMPONENTE", 1, compPage.size, compFilter);
+    loadPagedItems("PERIFERICO", 1, periPage.size, periFilter);
+    loadPagedEquipos(1, eqPage.size, eqFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaId]);
 
@@ -152,10 +192,10 @@ export default function AreaView() {
       return;
     }
     const r = await http.get<Attr[]>(`/api/spec/attrs`, { params: { clase: claseActual, tipo } });
-    setSchema(r.data);
+    setSchema(r.data || []);
     setForm((f) => ({
       ...f,
-      specs: r.data.length ? r.data.map((a) => ({ k: a.nombre, v: "" })) : [],
+      specs: (r.data || []).length ? (r.data || []).map((a) => ({ k: a.nombre, v: "" })) : [],
     }));
   }
 
@@ -168,9 +208,9 @@ export default function AreaView() {
       const r = await http.get<{ next_code: string }>(`/api/items/next-code`, {
         params: { clase: claseActual, tipo, area_id: areaId },
       });
-      setForm((f) => ({ ...f, codigo: r.data.next_code || "" }));
+      setForm((f) => ({ ...f, codigo: r.data?.next_code || "" }));
     } catch {
-      // si falla, dejamos el input editable
+      /* ignore */
     }
   }
 
@@ -178,7 +218,7 @@ export default function AreaView() {
   function buildValidatedSpecs(): Record<string, any> | string {
     const out: Record<string, any> = {};
     for (const { k, v } of form.specs) {
-      const key = k.trim();
+      const key = (k ?? "").trim();
       if (!key) continue;
       const dt = schema.find((s) => s.nombre.toLowerCase() === key.toLowerCase())?.data_type || "text";
 
@@ -237,9 +277,9 @@ export default function AreaView() {
       setFiles(null);
 
       if (claseActual === "COMPONENTE") {
-        await loadPaged("COMPONENTE", compPage.page, compPage.size, compFilter);
+        await loadPagedItems("COMPONENTE", compPage.page, compPage.size, compFilter);
       } else {
-        await loadPaged("PERIFERICO", periPage.page, periPage.size, periFilter);
+        await loadPagedItems("PERIFERICO", periPage.page, periPage.size, periFilter);
       }
     } catch (e: any) {
       setMsg(e?.response?.data?.error || "No se pudo crear");
@@ -257,13 +297,15 @@ export default function AreaView() {
         data_type: newAttr.data_type,
       });
       setShowNewAttr(false);
+      const createdName = newAttr.nombre;
       setNewAttr({ nombre: "", data_type: "text" });
       await loadSchema(form.tipo_nombre);
-      setOk(`Campo "${newAttr.nombre}" creado para ${form.tipo_nombre}`);
+      setOk(`Campo "${createdName}" creado para ${form.tipo_nombre}`);
     } catch (e: any) {
       setMsg(e?.response?.data?.error || "No se pudo crear el campo");
     }
   }
+
   async function deleteAttrGlobal(attrName: string) {
     if (!form.tipo_nombre) return;
     const nombre_attr = attrName.trim();
@@ -279,6 +321,7 @@ export default function AreaView() {
       setMsg(e?.response?.data?.message || e?.response?.data?.error || "No se pudo eliminar el campo");
     }
   }
+
   function removePairAt(idx: number) {
     setForm((f) => {
       const copy = [...f.specs];
@@ -286,13 +329,16 @@ export default function AreaView() {
       return { ...f, specs: copy };
     });
   }
+
   async function createType() {
     const name = newTypeName.trim();
     if (!name) return;
     try {
-      const res = await http.post<{ id: number; clase: string; nombre: string }>("/api/item-types", { clase: claseActual, nombre: name });
+      const res = await http.post<{ id: number; clase: string; nombre: string }>("/api/item-types", {
+        clase: claseActual, nombre: name
+      });
       const list = await http.get<ItemType[]>(`/api/item-types?clase=${claseActual}`);
-      if (claseActual === "COMPONENTE") setTypesC(list.data); else setTypesP(list.data);
+      if (claseActual === "COMPONENTE") setTypesC(list.data || []); else setTypesP(list.data || []);
       setShowNewType(false); setNewTypeName("");
       await onChangeTipo(res.data.nombre);
       setOk(`Tipo "${res.data.nombre}" creado`);
@@ -300,27 +346,38 @@ export default function AreaView() {
   }
 
   // Helpers paginación
-  const onChangePage = async (cls: Clase, page: number) => {
+  const onChangePageItems = async (cls: Clase, page: number) => {
     const size = cls === "COMPONENTE" ? compPage.size : periPage.size;
     const filt = cls === "COMPONENTE" ? compFilter : periFilter;
-    await loadPaged(cls, page, size, filt);
+    await loadPagedItems(cls, page, size, filt);
   };
-  const onChangeSize = async (cls: Clase, size: number) => {
+  const onChangeSizeItems = async (cls: Clase, size: number) => {
     const filt = cls === "COMPONENTE" ? compFilter : periFilter;
-    await loadPaged(cls, 1, size, filt);
-    if (cls === "COMPONENTE") setCompPage((p) => ({ ...p, size }));
-    else setPeriPage((p) => ({ ...p, size }));
+    await loadPagedItems(cls, 1, size, filt);
+    if (cls === "COMPONENTE") setCompPage((p) => ({ ...p, size })); else setPeriPage((p) => ({ ...p, size }));
   };
-  const applyFilters = async (cls: Clase) => {
+  const applyFiltersItems = async (cls: Clase) => {
     const filt = cls === "COMPONENTE" ? compFilter : periFilter;
-    await loadPaged(cls, 1, cls === "COMPONENTE" ? compPage.size : periPage.size, filt);
+    await loadPagedItems(cls, 1, cls === "COMPONENTE" ? compPage.size : periPage.size, filt);
+  };
+
+  // Equipos
+  const onChangePageEquipos = async (page: number) => {
+    await loadPagedEquipos(page, eqPage.size, eqFilter);
+  };
+  const onChangeSizeEquipos = async (size: number) => {
+    await loadPagedEquipos(1, size, eqFilter);
+    setEqPage((p) => ({ ...p, size }));
+  };
+  const applyFiltersEquipos = async () => {
+    await loadPagedEquipos(1, eqPage.size, eqFilter);
   };
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xl font-semibold">{info?.area.nombre || "Área"}</div>
+          <div className="text-xl font-semibold">{info?.area?.nombre || "Área"}</div>
           {info && (
             <div className="text-sm text-slate-500 flex flex-wrap gap-1">
               {info.ancestors.length === 0 ? (
@@ -339,38 +396,74 @@ export default function AreaView() {
           )}
         </div>
 
-        {/* Botón Nuevo equipo */}
-        {Number.isFinite(areaId) && areaId > 0 && (
-          <Link to={`/areas/${areaId}/equipos/nuevo`} className="px-3 py-2 rounded-lg bg-slate-900 text-white">
-            Nuevo equipo
-          </Link>
-        )}
+        {/* Equipos + menú “+ Nuevo ▾” */}
+        <div className="relative">
+          <span className="inline-flex rounded-lg">
+            <button
+              onClick={() => {
+                setTab("EQUIPOS");
+                setForm({ tipo_nombre: "", codigo: "", specs: [] });
+                setSchema([]); setFiles(null);
+              }}
+              className={`px-4 py-2 ${tab === "EQUIPOS" ? "bg-slate-900 text-white" : "bg-white border border-slate-300"}`}
+              style={tab === "EQUIPOS" ? {} : { borderTopLeftRadius: 8, borderBottomLeftRadius: 8 }}
+            >
+              Equipos
+            </button>
+            <button
+              onClick={() => setOpenMenu(v => !v)}
+              className={`px-3 py-2 ${tab === "EQUIPOS"
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-white border border-slate-300 hover:bg-slate-50"}`}
+              style={tab === "EQUIPOS" ? {} : { borderTopRightRadius: 8, borderBottomRightRadius: 8 }}
+              title="Crear nuevo equipo"
+            >
+              + Nuevo ▾
+            </button>
+          </span>
+
+          {openMenu && (
+            <div className="absolute right-0 mt-2 w-60 bg-white border rounded-lg shadow-lg z-20">
+              <Link
+                to={`/areas/${areaId}/equipos/nuevo`}
+                className="block px-3 py-2 hover:bg-slate-50"
+                onClick={() => setOpenMenu(false)}
+              >
+                Crear desde ALMACÉN
+              </Link>
+              <Link
+                to={`/areas/${areaId}/equipos/nuevo-uso`}
+                className="block px-3 py-2 hover:bg-slate-50"
+                onClick={() => setOpenMenu(false)}
+              >
+                Crear en USO (con nuevos ítems)
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
 
       {msg && <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{msg}</div>}
       {ok && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">{ok}</div>}
 
-      {/* Tabs */}
+      {/* Tabs arriba (items) */}
       <div className="flex gap-2">
-        {(["COMPONENTE", "PERIFERICO", "EQUIPOS"] as const).map((t) => (
+        {(["COMPONENTE", "PERIFERICO"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
               setTab(t);
-              if (t !== "EQUIPOS") {
-                setForm({ tipo_nombre: "", codigo: "", specs: [] });
-                setSchema([]);
-                setFiles(null);
-              }
+              setForm({ tipo_nombre: "", codigo: "", specs: [] });
+              setSchema([]); setFiles(null);
             }}
             className={`px-4 py-2 rounded-lg ${tab === t ? "bg-slate-900 text-white" : "bg-white border border-slate-300"}`}
           >
-            {t === "EQUIPOS" ? "Equipos" : t === "COMPONENTE" ? "Componentes" : "Periféricos"}
+            {t === "COMPONENTE" ? "Componentes" : "Periféricos"}
           </button>
         ))}
       </div>
 
-      {/* Filtros (arriba del listado) */}
+      {/* Filtros (arriba del listado de items) */}
       {tab !== "EQUIPOS" && (
         <div className="bg-white rounded-2xl shadow p-3 grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div>
@@ -419,7 +512,7 @@ export default function AreaView() {
           <div className="flex items-end gap-2">
             <button
               className="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
-              onClick={() => applyFilters(tab === "COMPONENTE" ? "COMPONENTE" : "PERIFERICO")}
+              onClick={() => applyFiltersItems(tab === "COMPONENTE" ? "COMPONENTE" : "PERIFERICO")}
             >
               Aplicar
             </button>
@@ -428,7 +521,7 @@ export default function AreaView() {
               onClick={async () => {
                 if (tab === "COMPONENTE") setCompFilter({ tipo: "", desde: "", hasta: "" });
                 else setPeriFilter({ tipo: "", desde: "", hasta: "" });
-                await applyFilters(tab === "COMPONENTE" ? "COMPONENTE" : "PERIFERICO");
+                await applyFiltersItems(tab === "COMPONENTE" ? "COMPONENTE" : "PERIFERICO");
               }}
             >
               Limpiar
@@ -437,7 +530,7 @@ export default function AreaView() {
         </div>
       )}
 
-      {/* Formulario crear (solo Componentes/Periféricos) */}
+      {/* Formulario crear (Componentes/Periféricos) */}
       {tab !== "EQUIPOS" && (
         <form onSubmit={createItem} className="bg-white rounded-2xl shadow p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -618,22 +711,84 @@ export default function AreaView() {
         </form>
       )}
 
-      {/* Listas paginadas */}
+      {/* Listas paginadas de Ítems */}
       {tab === "COMPONENTE" && (
         <ItemsTable
           page={compPage}
-          onPage={(p) => onChangePage("COMPONENTE", p)}
-          onSize={(s) => onChangeSize("COMPONENTE", s)}
+          onPage={(p) => onChangePageItems("COMPONENTE", p)}
+          onSize={(s) => onChangeSizeItems("COMPONENTE", s)}
         />
       )}
       {tab === "PERIFERICO" && (
         <ItemsTable
           page={periPage}
-          onPage={(p) => onChangePage("PERIFERICO", p)}
-          onSize={(s) => onChangeSize("PERIFERICO", s)}
+          onPage={(p) => onChangePageItems("PERIFERICO", p)}
+          onSize={(s) => onChangeSizeItems("PERIFERICO", s)}
         />
       )}
-      {tab === "EQUIPOS" && <EquiposTable rows={eqs} />}
+
+      {/* Equipos: filtros + lista paginada */}
+      {tab === "EQUIPOS" && (
+        <>
+          <div className="bg-white rounded-2xl shadow p-3 grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div>
+              <div className="text-sm text-slate-600">Estado</div>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={eqFilter.estado}
+                onChange={(e) => setEqFilter((f) => ({ ...f, estado: e.target.value }))}
+              >
+                <option value="">(Todos)</option>
+                <option value="USO">USO</option>
+                <option value="ALMACEN">ALMACEN</option>
+                <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+                <option value="BAJA">BAJA</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">Desde</div>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={eqFilter.desde}
+                onChange={(e) => setEqFilter((f) => ({ ...f, desde: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">Hasta</div>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={eqFilter.hasta}
+                onChange={(e) => setEqFilter((f) => ({ ...f, hasta: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <button
+                className="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
+                onClick={applyFiltersEquipos}
+              >
+                Aplicar
+              </button>
+              <button
+                className="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
+                onClick={async () => {
+                  setEqFilter({ estado: "", desde: "", hasta: "" });
+                  await applyFiltersEquipos();
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+
+          <EquiposTable
+            page={eqPage}
+            onPage={onChangePageEquipos}
+            onSize={onChangeSizeEquipos}
+          />
+        </>
+      )}
 
       {/* Modal: nuevo campo */}
       {showNewAttr && (
@@ -801,7 +956,17 @@ function ItemsTable({
   );
 }
 
-function EquiposTable({ rows }: { rows: EquipoRow[] }) {
+function EquiposTable({
+  page,
+  onPage,
+  onSize,
+}: {
+  page: EquiposPage;
+  onPage: (p: number) => void;
+  onSize: (s: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil((page.total || 0) / (page.size || 10)));
+  const rows = Array.isArray(page.items) ? page.items : [];
   return (
     <div className="bg-white rounded-2xl shadow">
       <div className="overflow-x-auto">
@@ -842,6 +1007,43 @@ function EquiposTable({ rows }: { rows: EquipoRow[] }) {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Paginación */}
+      <div className="flex items-center justify-between p-3">
+        <div className="text-sm text-slate-600">Total: {page.total}</div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded border"
+            disabled={page.page <= 1}
+            onClick={() => onPage(page.page - 1)}
+          >
+            ◀
+          </button>
+          <span className="text-sm">
+            Página {page.page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded border"
+            disabled={page.page >= totalPages}
+            onClick={() => onPage(page.page + 1)}
+          >
+            ▶
+          </button>
+          <select
+            className="ml-2 rounded border px-2 py-1 text-sm"
+            value={page.size}
+            onChange={(e) => onSize(Number(e.target.value))}
+          >
+            {[10, 20, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n} / pág
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );

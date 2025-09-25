@@ -1,4 +1,4 @@
-// frontend/src/pages/EquipoNuevo.tsx
+// src/pages/EquipoNuevo.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import http from "../api/http";
@@ -16,7 +16,7 @@ export default function EquipoNuevo() {
   const nav = useNavigate();
 
   const [form, setForm] = useState({
-    codigo: "", nombre: "", estado: "USO", usuario_final: "", login: "", password: ""
+    codigo: "", nombre: "", estado: "ALMACEN", usuario_final: "", login: "", password: ""
   });
 
   // tipos para filtros
@@ -74,7 +74,8 @@ export default function EquipoNuevo() {
     ];
     try {
       const r = await http.post<{ equipo_id: number }>(`/api/areas/${aid}/equipos`, {
-        ...form, items
+        ...form,
+        items
       });
       setOk("Equipo creado");
       nav(`/equipos/${r.data.equipo_id}`);
@@ -88,7 +89,7 @@ export default function EquipoNuevo() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <div className="text-xl font-semibold">Nuevo equipo</div>
+      <div className="text-xl font-semibold">Nuevo equipo (desde ALMACÉN)</div>
 
       {msg && <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{msg}</div>}
       {ok && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">{ok}</div>}
@@ -109,9 +110,10 @@ export default function EquipoNuevo() {
             <div className="text-sm text-slate-600">Estado</div>
             <select className="w-full border rounded-lg px-3 py-2"
               value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>
-              <option value="USO">USO</option>
               <option value="ALMACEN">ALMACEN</option>
+              <option value="USO">USO</option>
               <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+              <option value="BAJA">BAJA</option>
             </select>
           </div>
           <div>
@@ -132,7 +134,6 @@ export default function EquipoNuevo() {
         </div>
       </div>
 
-      {/* Disponibles: Componentes */}
       <SelectorLista
         title="Componentes disponibles"
         page={pageC}
@@ -145,7 +146,6 @@ export default function EquipoNuevo() {
         rows={compLeft}
       />
 
-      {/* Disponibles: Periféricos */}
       <SelectorLista
         title="Periféricos disponibles"
         page={pageP}

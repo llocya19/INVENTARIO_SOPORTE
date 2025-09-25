@@ -3,14 +3,9 @@ from typing import List, Dict, Any, Optional, Tuple
 from app.db import get_conn
 
 # ---------------------------------------------------
-# Listado de equipos en un área
+# Listado simple (compatibilidad)
 # ---------------------------------------------------
 def list_area_equipos(app_user: str, area_id: int) -> List[Dict[str, Any]]:
-    """
-    Lista equipos del área con created_at/updated_at.
-    Columnas usadas: equipo_id, equipo_codigo, equipo_nombre, equipo_area_id,
-                     equipo_estado, equipo_usuario_final, created_at, updated_at
-    """
     SQL = """
     SELECT
       e.equipo_id,
@@ -27,7 +22,7 @@ def list_area_equipos(app_user: str, area_id: int) -> List[Dict[str, Any]]:
     with get_conn(app_user) as (conn, cur):
         cur.execute(SQL, (area_id,))
         rows = cur.fetchall()
-    out = []
+    out: List[Dict[str, Any]] = []
     for r in rows:
         out.append({
             "equipo_id": r[0],
@@ -42,15 +37,78 @@ def list_area_equipos(app_user: str, area_id: int) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------
-# Detalle de un equipo (cabecera)
+# Listado con filtros y paginación
+# ---------------------------------------------------
+def list_area_equipos_paged(
+    app_user: str,
+    area_id: int,
+    estado: Optional[str] = None,      # USO | ALMACEN | ... | None (todos)
+    fecha_desde: Optional[str] = None, # 'YYYY-MM-DD'
+    fecha_hasta: Optional[str] = None, # 'YYYY-MM-DD'
+    page: int = 1,
+    size: int = 10,
+) -> Dict[str, Any]:
+    p = max(1, int(page or 1))
+    s = min(100, max(1, int(size or 10)))
+    off = (p - 1) * s
+
+    sql = """
+      SELECT
+        e.equipo_id,
+        e.equipo_codigo,
+        e.equipo_nombre,
+        e.equipo_estado,
+        e.equipo_usuario_final,
+        e.created_at,
+        e.updated_at,
+        COUNT(*) OVER() AS total_rows
+      FROM inv.equipos e
+      WHERE e.equipo_area_id = %s
+    """
+    params: List[Any] = [area_id]
+
+    if estado and estado.upper() != "TODOS":
+        sql += " AND e.equipo_estado = %s"
+        params.append(estado.upper())
+
+    if fecha_desde:
+        sql += " AND e.created_at::date >= %s::date"
+        params.append(fecha_desde)
+
+    if fecha_hasta:
+        sql += " AND e.created_at::date <= %s::date"
+        params.append(fecha_hasta)
+
+    sql += """
+      ORDER BY e.created_at DESC, lower(e.equipo_codigo)
+      LIMIT %s OFFSET %s
+    """
+    params.extend([s, off])
+
+    with get_conn(app_user) as (conn, cur):
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    total = 0
+    items: List[Dict[str, Any]] = []
+    for r in rows:
+        total = r[7]
+        items.append({
+            "equipo_id": r[0],
+            "equipo_codigo": r[1],
+            "equipo_nombre": r[2],
+            "estado": r[3],
+            "usuario_final": r[4],
+            "created_at": r[5],
+            "updated_at": r[6],
+        })
+    return {"items": items, "total": int(total or 0), "page": p, "size": s}
+
+
+# ---------------------------------------------------
+# Detalle
 # ---------------------------------------------------
 def get_equipo_header(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Trae la cabecera del equipo.
-    Columnas usadas: equipo_id, equipo_codigo, equipo_nombre, equipo_area_id,
-                     equipo_estado, equipo_usuario_final, equipo_login, equipo_password,
-                     created_at, updated_at
-    """
     SQL = """
       SELECT
         e.equipo_id,
@@ -85,17 +143,7 @@ def get_equipo_header(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]]
     }
 
 
-# ---------------------------------------------------
-# Detalle de un equipo (cabecera + items asignados)
-# ---------------------------------------------------
 def get_equipo_detalle(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Devuelve equipo + items asignados (con clase, tipo, codigo, estado) para mostrar y gestionar.
-    """
-    header = get_equipo_header(app_user, equipo_id)
-    if not header:
-        return None
-
     SQL = """
       SELECT i.item_id, i.item_codigo, it.clase, it.nombre AS tipo, i.estado
       FROM inv.equipo_items ei
@@ -105,10 +153,12 @@ def get_equipo_detalle(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]
       ORDER BY CASE WHEN it.clase='COMPONENTE' THEN 0 ELSE 1 END,
                lower(it.nombre), lower(i.item_codigo)
     """
+    header = get_equipo_header(app_user, equipo_id)
+    if not header:
+        return None
     with get_conn(app_user) as (conn, cur):
         cur.execute(SQL, (equipo_id,))
         rows = cur.fetchall()
-
     items = []
     for r in rows:
         items.append({
@@ -123,16 +173,16 @@ def get_equipo_detalle(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]
 
 
 # ---------------------------------------------------
-# Ítems disponibles (ALMACEN) por área con paginación/filtro
+# Ítems disponibles (para "desde almacén")
 # ---------------------------------------------------
 def list_items_disponibles(
     app_user: str,
     area_id: int,
-    clase: str,               # COMPONENTE | PERIFERICO
+    clase: str,
     page: int = 1,
     size: int = 10,
     tipo_nombre: Optional[str] = None,
-    q: Optional[str] = None,  # busca en item_codigo
+    q: Optional[str] = None,
 ) -> Dict[str, Any]:
     p = max(1, int(page or 1))
     s = min(100, max(1, int(size or 10)))
@@ -189,7 +239,7 @@ def list_items_disponibles(
 
 
 # ---------------------------------------------------
-# Crear equipo + asignar items (usa SP de negocio si está disponible)
+# Crear equipo (con items preexistentes opcional)
 # ---------------------------------------------------
 def create_equipo_con_items(
     app_user: str,
@@ -200,15 +250,9 @@ def create_equipo_con_items(
     usuario_final: Optional[str],
     login: Optional[str],
     password: Optional[str],
-    items: List[Dict[str, Any]],   # [{item_id, slot}]
+    items: List[Dict[str, Any]],
 ) -> Tuple[Optional[int], Optional[str]]:
-    """
-    Crea un equipo y asigna items del área (solo ALMACEN).
-    Se intenta usar inv.sp_asignar_item_a_equipo(equipo_id, item_id, slot);
-    si no existe, hace inserción directa + UPDATE estado y registra movimiento básico.
-    """
     with get_conn(app_user) as (conn, cur):
-        # crear cabecera
         try:
             cur.execute("""
               INSERT INTO inv.equipos (
@@ -223,12 +267,10 @@ def create_equipo_con_items(
 
         equipo_id = int(cur.fetchone()[0])
 
-        # asignar items
         for it in items:
             item_id = int(it.get("item_id"))
             slot = it.get("slot")
 
-            # Validaciones mínimas
             cur.execute("SELECT area_id, estado FROM inv.items WHERE item_id=%s", (item_id,))
             r = cur.fetchone()
             if not r:
@@ -238,9 +280,14 @@ def create_equipo_con_items(
             if r[1] != "ALMACEN":
                 return None, f"Item {item_id} no está en ALMACEN (actual={r[1]})"
 
-            # Intentar SP de negocio (si existe)
+            # ¿Existe SP?
             try:
-                cur.execute("SELECT 1 FROM pg_proc WHERE proname='sp_asignar_item_a_equipo' AND pronamespace = 'inv'::regnamespace")
+                cur.execute("""
+                  SELECT 1
+                    FROM pg_proc
+                   WHERE proname='sp_asignar_item_a_equipo'
+                     AND pronamespace = 'inv'::regnamespace
+                """)
                 exists = cur.fetchone() is not None
             except Exception:
                 exists = False
@@ -248,23 +295,19 @@ def create_equipo_con_items(
             if exists:
                 cur.execute("CALL inv.sp_asignar_item_a_equipo(%s,%s,%s)", (equipo_id, item_id, slot))
             else:
-                # fallback directo: puente + estado
                 cur.execute("""
                     INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
                     VALUES (%s,%s,%s)
                 """, (equipo_id, item_id, slot))
-                cur.execute("""
-                    UPDATE inv.items
-                       SET estado='EN_USO', updated_at = NOW()
-                     WHERE item_id=%s
-                """, (item_id,))
-                # movimiento mínimo
+                cur.execute("UPDATE inv.items SET estado='EN_USO' WHERE item_id=%s", (item_id,))
                 cur.execute("""
                   INSERT INTO inv.movimientos(
                     mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
                     mov_equipo_id, mov_usuario_app, mov_detalle
                   ) VALUES (
-                    %s, 'ASIGNACION', %s, %s, %s, current_setting('app.user', true), %s
+                    %s, 'ASIGNACION', %s, %s, %s,
+                    current_setting('app.user', true),
+                    %s
                   )
                 """, (item_id, area_id, area_id, equipo_id, None if slot is None else {'slot': slot}))
 
@@ -272,7 +315,86 @@ def create_equipo_con_items(
 
 
 # ---------------------------------------------------
-# Quitar un item del equipo (opcional para edición)
+# Asignar item a equipo (para /api/equipos/<id>/items)
+# ---------------------------------------------------
+def assign_item_to_equipo(
+    app_user: str,
+    equipo_id: int,
+    item_id: int,
+    slot: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Asigna item -> equipo usando PK compuesta (equipo_id, item_id).
+    No usa columna 'updated_at' en inv.items.
+    """
+    with get_conn(app_user) as (conn, cur):
+        # 1) Validar equipo y obtener su área
+        cur.execute("SELECT equipo_area_id FROM inv.equipos WHERE equipo_id=%s", (equipo_id,))
+        r = cur.fetchone()
+        if not r:
+            return False, "Equipo no encontrado"
+        equipo_area_id = int(r[0])
+
+        # 2) Validar ítem
+        cur.execute("SELECT area_id, estado FROM inv.items WHERE item_id=%s", (item_id,))
+        r = cur.fetchone()
+        if not r:
+            return False, "Item no encontrado"
+        item_area_id, _estado_actual = r[0], r[1]
+
+        if item_area_id is not None and equipo_area_id is not None and int(item_area_id) != int(equipo_area_id):
+            return False, "El ítem pertenece a otra área"
+
+        # 3) ¿Ya está asignado a algún equipo?
+        cur.execute("""
+            SELECT equipo_id, slot_o_ubicacion
+              FROM inv.equipo_items
+             WHERE item_id=%s
+        """, (item_id,))
+        rel = cur.fetchone()
+
+        if rel:
+            old_equipo_id = int(rel[0])
+            if old_equipo_id == equipo_id:
+                # idempotente: actualizar slot si cambió
+                cur.execute("""
+                    UPDATE inv.equipo_items
+                       SET slot_o_ubicacion=%s
+                     WHERE equipo_id=%s AND item_id=%s
+                """, (slot, equipo_id, item_id))
+            else:
+                # mover: borrar relación anterior y crear la nueva
+                cur.execute("DELETE FROM inv.equipo_items WHERE item_id=%s", (item_id,))
+                cur.execute("""
+                    INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
+                    VALUES (%s,%s,%s)
+                """, (equipo_id, item_id, slot))
+        else:
+            # crear relación nueva
+            cur.execute("""
+                INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
+                VALUES (%s,%s,%s)
+            """, (equipo_id, item_id, slot))
+
+        # 4) Estado del ítem
+        cur.execute("UPDATE inv.items SET estado='EN_USO' WHERE item_id=%s", (item_id,))
+
+        # 5) Movimiento
+        cur.execute("""
+          INSERT INTO inv.movimientos(
+            mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
+            mov_equipo_id, mov_usuario_app, mov_detalle
+          ) VALUES (
+            %s, 'ASIGNACION', %s, %s, %s, current_setting('app.user', true),
+            %s
+          )
+        """, (item_id, equipo_area_id, equipo_area_id, equipo_id, None if slot is None else {'slot': slot}))
+
+        return True, None
+
+
+# ---------------------------------------------------
+# Retirar ítem del equipo
 # ---------------------------------------------------
 def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
     with get_conn(app_user) as (conn, cur):
@@ -280,20 +402,24 @@ def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
                     (equipo_id, item_id))
         if not cur.fetchone():
             return "El item no estaba asignado"
-        cur.execute("UPDATE inv.items SET estado='ALMACEN', updated_at = NOW() WHERE item_id=%s", (item_id,))
-        # movimiento
+
+        # Estado de vuelta a ALMACEN (sin updated_at)
+        cur.execute("UPDATE inv.items SET estado='ALMACEN' WHERE item_id=%s", (item_id,))
+
+        # Movimiento
         cur.execute("""
           INSERT INTO inv.movimientos(
             mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
             mov_equipo_id, mov_usuario_app, mov_motivo
-          ) SELECT %s, 'RETIRO', e.equipo_area_id, e.equipo_area_id, %s, current_setting('app.user', true), %s
+          ) SELECT %s, 'RETIRO', e.equipo_area_id, e.equipo_area_id, %s,
+                   current_setting('app.user', true), %s
             FROM inv.equipos e WHERE e.equipo_id=%s
         """, (item_id, equipo_id, None, equipo_id))
     return None
 
 
 # ---------------------------------------------------
-# Editar metadatos del equipo
+# Actualizar metadatos del equipo
 # ---------------------------------------------------
 def update_equipo_meta(
     app_user: str,
@@ -318,7 +444,10 @@ def update_equipo_meta(
         pieces.append("equipo_password=%s"); params.append(password)
     if not pieces:
         return None
-    sql = "UPDATE inv.equipos SET " + ", ".join(pieces) + ", updated_at=NOW() WHERE equipo_id=%s"
+
+    # Nota: no tocamos updated_at si tu tabla no lo tiene; si lo tienes,
+    # puedes agregar ", updated_at=NOW()" aquí.
+    sql = "UPDATE inv.equipos SET " + ", ".join(pieces) + " WHERE equipo_id=%s"
     params.append(equipo_id)
     with get_conn(app_user) as (conn, cur):
         cur.execute(sql, params)

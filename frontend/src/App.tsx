@@ -9,8 +9,9 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import { getUser, logout } from "./services/authService";
 
 // Equipos
-import EquipoNuevo from "./pages/EquipoNuevo";      // crear equipo (PC) dentro de un área
-import EquipoDetalle from "./pages/EquipoDetalle";  // ver detalle de un equipo
+import EquipoNuevo from "./pages/EquipoNuevo";        // crear equipo (PC) dentro de un área
+import EquipoDetalle from "./pages/EquipoDetalle";    // ver detalle de un equipo
+import EquipoNuevoUso from "./pages/EquipoNuevoEnUso";  // ✅ nombre correcto de archivo
 
 function Nav() {
   const u = getUser();
@@ -98,7 +99,7 @@ export default function App() {
           }
         />
 
-        {/* Crear equipo (PC) dentro de un área */}
+        {/* Crear equipo (desde ALMACÉN) */}
         <Route
           path="/areas/:areaId/equipos/nuevo"
           element={
@@ -108,12 +109,22 @@ export default function App() {
           }
         />
 
-        {/* 🔧 Detalle del equipo (esta ruta faltaba) */}
+        {/* Detalle del equipo */}
         <Route
           path="/equipos/:id"
           element={
             <ProtectedRoute>
               <EquipoDetalle />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ✅ Crear equipo en USO (con nuevos ítems) — protegido y con import correcto */}
+        <Route
+          path="/areas/:areaId/equipos/nuevo-uso"
+          element={
+            <ProtectedRoute>
+              <EquipoNuevoUso />
             </ProtectedRoute>
           }
         />

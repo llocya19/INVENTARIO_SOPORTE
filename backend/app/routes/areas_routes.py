@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.core.security import require_auth, require_admin
 from app.models.area_model import (
-    list_areas, list_root_areas, list_area_items, list_area_equipos,
+    list_areas, list_root_areas, list_area_items,
     create_root_area, create_sub_area, get_area_info
 )
 
@@ -34,10 +34,8 @@ def get_area_items(area_id: int):
     )
     return jsonify(data)
 
-@bp.get("/<int:area_id>/equipos")
-@require_auth
-def get_area_equipos(area_id: int):
-    return jsonify(list_area_equipos(request.claims["username"], area_id))
+# ⚠️ IMPORTANTE: eliminamos el endpoint duplicado de equipos aquí
+# @bp.get("/<int:area_id>/equipos")  ← eliminado
 
 @bp.get("/<int:area_id>/info")
 @require_auth
