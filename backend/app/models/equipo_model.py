@@ -452,3 +452,41 @@ def update_equipo_meta(
     with get_conn(app_user) as (conn, cur):
         cur.execute(sql, params)
     return None
+
+
+# ---------------------------------------------------
+# Siguiente código sugerido por área (nuevo)
+# ---------------------------------------------------
+def get_next_equipo_code(
+    app_user: str,
+    area_id: int,
+    prefix: Optional[str] = None,
+    pad: int = 3,
+) -> str:
+    """
+    Genera el siguiente código consecutivo por área.
+    - Si se pasa prefix (ej. 'PC-'), filtra por ese prefijo.
+    - Extrae el sufijo numérico (al final del código) y lo incrementa.
+    - Si no hay registros previos, empieza en 1.
+    - Devuelve con zero-padding (pad).
+    """
+    pref = (prefix or "PC-").strip()
+    if pref == "":
+        pref = "PC-"
+
+    SQL = """
+      SELECT COALESCE(MAX( (regexp_replace(equipo_codigo, '[^0-9]+', '', 'g'))::int ), 0) AS max_num
+        FROM inv.equipos
+       WHERE equipo_area_id = %s
+         AND equipo_codigo ILIKE %s
+         AND equipo_codigo ~ '\\d+$'
+    """
+    params = [area_id, f"{pref}%"]
+    with get_conn(app_user) as (conn, cur):
+        cur.execute(SQL, params)
+        r = cur.fetchone()
+        max_num = int(r[0] or 0)
+
+    nxt = max_num + 1
+    suf = str(nxt).zfill(max(1, int(pad or 3)))
+    return f"{pref}{suf}"

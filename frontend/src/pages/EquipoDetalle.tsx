@@ -3,18 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import http from "../api/http";
 
-/* ---------- Tipos del backend ---------- */
+/* ---------- Tipos del backend (alineados) ---------- */
 type Clase = "COMPONENTE" | "PERIFERICO";
 
 type EquipoHeaderAPI = {
   equipo_id: number;
   equipo_codigo: string;
   equipo_nombre: string;
-  area_id: number;                   // <- backend devuelve area_id
-  equipo_estado: string;
-  equipo_usuario_final: string | null;
-  equipo_login: string | null;
-  equipo_password: string | null;
+  area_id: number;
+  estado: string;                 // backend: estado
+  usuario_final: string | null;   // backend: usuario_final
+  login: string | null;           // backend: login
+  password: string | null;        // backend: password
   created_at?: string | null;
   updated_at?: string | null;
   items?: EquipoItemAPI[];
@@ -52,7 +52,7 @@ export default function EquipoDetalle() {
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // edición metadatos (se inicializa con loadDetalle)
+  // edición metadatos
   const [edit, setEdit] = useState({
     nombre: "",
     estado: "USO",
@@ -61,7 +61,7 @@ export default function EquipoDetalle() {
     password: "",
   });
 
-  // panel agregar items
+  // panel agregar desde almacén
   const [openAdd, setOpenAdd] = useState(false);
   const [addClase, setAddClase] = useState<Clase>("COMPONENTE");
   const [typesC, setTypesC] = useState<ItemType[]>([]);
@@ -72,6 +72,9 @@ export default function EquipoDetalle() {
   const [addPage, setAddPage] = useState<ItemsPage>({ items: [], total: 0, page: 1, size: 10 });
 
   const areaId = useMemo(() => header?.area_id ?? 0, [header]);
+
+  /* ---------- Helpers estado ---------- */
+  const isEnUso = ((header?.estado || edit.estado) ?? "").toUpperCase() === "USO";
 
   /* ---------- Cargas ---------- */
   async function loadDetalle(showOk?: string) {
@@ -88,10 +91,10 @@ export default function EquipoDetalle() {
 
       setEdit({
         nombre: h.equipo_nombre || "",
-        estado: (h.equipo_estado || "USO").toUpperCase(),
-        usuario_final: h.equipo_usuario_final || "",
-        login: h.equipo_login || "",
-        password: h.equipo_password || "",
+        estado: (h.estado || "USO").toUpperCase(),
+        usuario_final: h.usuario_final || "",
+        login: h.login || "",
+        password: h.password || "",
       });
 
       if (showOk) setOk(showOk);
@@ -121,7 +124,6 @@ export default function EquipoDetalle() {
     if (addFilter.tipo) params.tipo = addFilter.tipo;
     if (addFilter.q) params.q = addFilter.q;
 
-    // tu backend expone ambas rutas; usamos la de guión
     const r = await http.get<ItemsPage>(`/api/areas/${areaId}/items-disponibles`, { params });
     setAddPage(r.data || { items: [], total: 0, page, size });
   }
@@ -147,7 +149,6 @@ export default function EquipoDetalle() {
     setMsg(null);
     setOk(null);
     try {
-      // ¡OJO! el backend espera estos nombres:
       await http.patch(`/api/equipos/${equipoId}`, {
         equipo_nombre: edit.nombre?.trim(),
         equipo_estado: edit.estado?.toUpperCase(),
@@ -277,16 +278,47 @@ export default function EquipoDetalle() {
         </div>
       </form>
 
-      {/* Listados asignados */}
-      <div className="flex items-center justify-between">
+      {/* Aviso si no está en USO */}
+      {header && !isEnUso && (
+        <div className="p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-sm">
+          Para agregar ítems <b>en USO</b>, cambia el estado del equipo a <b>USO</b> y guarda.
+        </div>
+      )}
+
+      {/* Listados asignados + acciones */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-lg font-semibold">Componentes & Periféricos asignados</div>
-        <button
-          className="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
-          onClick={() => setOpenAdd(true)}
-          disabled={!header}
-        >
-          + Agregar ítems
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Agregar desde ALMACÉN (siempre disponible; si quieres condicionarlo, me dices) */}
+          <button
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+            onClick={() => setOpenAdd(true)}
+            disabled={!header}
+            title="Asignar ítems existentes en ALMACÉN"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 5l9 4-9 4-9-4 9-4zm0 6l9 4-9 4-9-4 9-4z" />
+            </svg>
+            Agregar (ALMACÉN)
+          </button>
+
+          {/* NUEVO: Agregar EN USO — solo si está en USO */}
+          {header && isEnUso && (
+            <Link
+              to={`/equipos/${header.equipo_id}/agregar-en-uso`}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-300 transition-all shadow-sm"
+              title="Crear y asignar nuevos ítems en USO a este equipo"
+            >
+              {/* ícono plus dentro de un chip */}
+              <span className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-white/15">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11 11V6h2v5h5v2h-5v5h-2v-5H6v-2z" />
+                </svg>
+              </span>
+              Agregar ítems (EN USO)
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -294,7 +326,7 @@ export default function EquipoDetalle() {
         <ItemsAsignados title="Periféricos" rows={perifericos} onRemove={onRemoveItem} />
       </div>
 
-      {/* Panel Agregar */}
+      {/* Panel Agregar desde ALMACÉN */}
       {openAdd && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center p-3">
           <div className="bg-white w-full max-w-4xl rounded-2xl shadow-lg p-4 space-y-3 max-h-[90vh] flex flex-col">

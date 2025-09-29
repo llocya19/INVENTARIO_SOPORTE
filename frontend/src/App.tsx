@@ -89,6 +89,7 @@ export default function App() {
           }
         />
 
+<Route path="/equipos/:equipoId/agregar-en-uso" element={<EquipoNuevoUso />} />
         {/* Ficha de ítem */}
         <Route
           path="/items/:id"

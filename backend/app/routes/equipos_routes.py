@@ -10,9 +10,11 @@ from app.models.equipo_model import (
     assign_item_to_equipo,
     unassign_item,
     update_equipo_meta,
+    get_next_equipo_code,   # <-- NUEVO IMPORT
 )
 
 bp = Blueprint("equipos", __name__, url_prefix="/api")
+
 
 @bp.get("/equipos/<int:equipo_id>")
 @require_auth
@@ -33,21 +35,10 @@ def equipos_de_area(area_id: int):
     page = request.args.get("page", type=int, default=1)
     size = request.args.get("size", type=int, default=10)
 
-    # Si quieres forzar siempre paginado, deja esto así:
     data = list_area_equipos_paged(
         request.claims["username"], area_id, estado, fdes, fhas, page, size
     )
     return jsonify(data)
-
-    # Si en algún momento quieres devolver el listado simple cuando no haya filtros,
-    # sustituye lo anterior por:
-    # if not estado and not fdes and not fhas and page == 1 and size == 10:
-    #     return jsonify(list_area_equipos(request.claims["username"], area_id))
-    # else:
-    #     data = list_area_equipos_paged(
-    #         request.claims["username"], area_id, estado, fdes, fhas, page, size
-    #     )
-    #     return jsonify(data)
 
 
 @bp.get("/areas/<int:area_id>/items-disponibles")
@@ -134,3 +125,22 @@ def editar_equipo(equipo_id: int):
     if err:
         return {"error": err}, 400
     return {"ok": True}
+
+
+# --------- NUEVO: siguiente código sugerido ----------
+@bp.get("/areas/<int:area_id>/equipos/next-code")
+@require_auth
+def equipos_next_code(area_id: int):
+    """
+    Devuelve el próximo código sugerido para un equipo en esta área.
+    Params opcionales:
+      - prefix: ej. 'PC-' (por defecto 'PC-')
+      - pad: largo del zero-padding, ej. 3 => 001
+    """
+    prefix = request.args.get("prefix", default=None, type=str)
+    pad = request.args.get("pad", default=3, type=int)
+    try:
+        next_code = get_next_equipo_code(request.claims["username"], area_id, prefix, pad)
+        return jsonify({"next_code": next_code})
+    except Exception as e:
+        return {"error": f"No se pudo calcular el siguiente código: {e}"}, 400
