@@ -12,7 +12,7 @@ import { getUser, logout } from "./services/authService";
 import EquipoNuevo from "./pages/EquipoNuevo";        // crear equipo (PC) dentro de un área
 import EquipoDetalle from "./pages/EquipoDetalle";    // ver detalle de un equipo
 import EquipoNuevoUso from "./pages/EquipoNuevoEnUso";  // ✅ nombre correcto de archivo
-
+import Auditorias from "./pages/Auditorias";
 function Nav() {
   const u = getUser();
   return (
@@ -24,6 +24,11 @@ function Nav() {
           <Link to="/areas" className="text-slate-300 hover:text-white text-sm">
             Áreas
           </Link>
+          {u?.rol === "ADMIN"&& (
+            <Link to="/auditorias" className="text-slate-300 hover:text-white text-sm">
+              Auditorías
+            </Link>
+          )}
           {u?.rol === "ADMIN" && (
             <Link to="/users" className="text-slate-300 hover:text-white text-sm">
               Usuarios
@@ -119,7 +124,15 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
+         {/* Auditorías */}
+        <Route
+          path="/auditorias"
+          element={
+            <ProtectedRoute>
+              <Auditorias />
+            </ProtectedRoute>
+          }
+        />
         {/* ✅ Crear equipo en USO (con nuevos ítems) — protegido y con import correcto */}
         <Route
           path="/areas/:areaId/equipos/nuevo-uso"

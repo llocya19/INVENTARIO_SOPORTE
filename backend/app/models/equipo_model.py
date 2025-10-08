@@ -253,6 +253,8 @@ def create_equipo_con_items(
     items: List[Dict[str, Any]],
 ) -> Tuple[Optional[int], Optional[str]]:
     with get_conn(app_user) as (conn, cur):
+        # Contexto para mov_motivo
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.create_con_items',))
         try:
             cur.execute("""
               INSERT INTO inv.equipos (
@@ -328,6 +330,9 @@ def assign_item_to_equipo(
     No usa columna 'updated_at' en inv.items.
     """
     with get_conn(app_user) as (conn, cur):
+        # Contexto para mov_motivo
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.assign_item',))
+
         # 1) Validar equipo y obtener su área
         cur.execute("SELECT equipo_area_id FROM inv.equipos WHERE equipo_id=%s", (equipo_id,))
         r = cur.fetchone()
@@ -379,7 +384,7 @@ def assign_item_to_equipo(
         # 4) Estado del ítem
         cur.execute("UPDATE inv.items SET estado='EN_USO' WHERE item_id=%s", (item_id,))
 
-        # 5) Movimiento
+        # 5) Movimiento (sin mov_motivo -> usa DEFAULT con app.proc)
         cur.execute("""
           INSERT INTO inv.movimientos(
             mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
@@ -398,6 +403,9 @@ def assign_item_to_equipo(
 # ---------------------------------------------------
 def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
     with get_conn(app_user) as (conn, cur):
+        # Contexto para mov_motivo
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.unassign_item',))
+
         cur.execute("DELETE FROM inv.equipo_items WHERE equipo_id=%s AND item_id=%s RETURNING 1",
                     (equipo_id, item_id))
         if not cur.fetchone():
@@ -406,15 +414,15 @@ def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
         # Estado de vuelta a ALMACEN (sin updated_at)
         cur.execute("UPDATE inv.items SET estado='ALMACEN' WHERE item_id=%s", (item_id,))
 
-        # Movimiento
+        # Movimiento (sin mov_motivo -> usa DEFAULT con app.proc)
         cur.execute("""
           INSERT INTO inv.movimientos(
             mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
-            mov_equipo_id, mov_usuario_app, mov_motivo
+            mov_equipo_id, mov_usuario_app
           ) SELECT %s, 'RETIRO', e.equipo_area_id, e.equipo_area_id, %s,
-                   current_setting('app.user', true), %s
+                   current_setting('app.user', true)
             FROM inv.equipos e WHERE e.equipo_id=%s
-        """, (item_id, equipo_id, None, equipo_id))
+        """, (item_id, equipo_id, equipo_id))
     return None
 
 
@@ -445,11 +453,11 @@ def update_equipo_meta(
     if not pieces:
         return None
 
-    # Nota: no tocamos updated_at si tu tabla no lo tiene; si lo tienes,
-    # puedes agregar ", updated_at=NOW()" aquí.
     sql = "UPDATE inv.equipos SET " + ", ".join(pieces) + " WHERE equipo_id=%s"
     params.append(equipo_id)
     with get_conn(app_user) as (conn, cur):
+        # Contexto para mov_motivo (el trigger de equipo registrará los cambios)
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.update_meta',))
         cur.execute(sql, params)
     return None
 

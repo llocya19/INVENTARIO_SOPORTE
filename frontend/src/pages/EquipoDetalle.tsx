@@ -10,11 +10,11 @@ type EquipoHeaderAPI = {
   equipo_id: number;
   equipo_codigo: string;
   equipo_nombre: string;
-  area_id: number;
-  estado: string;                 // backend: estado
-  usuario_final: string | null;   // backend: usuario_final
-  login: string | null;           // backend: login
-  password: string | null;        // backend: password
+  area_id: number; // <- fixed
+  estado: string;
+  usuario_final: string | null;
+  login: string | null;
+  password: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   items?: EquipoItemAPI[];
@@ -39,6 +39,55 @@ type ItemDisponible = {
 
 type ItemsPage = { items: ItemDisponible[]; total: number; page: number; size: number };
 type ItemType = { id: number; clase: Clase; nombre: string };
+
+/* ---------- UI helpers ---------- */
+const card = "bg-white rounded-2xl shadow-sm ring-1 ring-slate-200";
+const field =
+  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/30 focus:border-slate-400 transition";
+const btn =
+  "inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 active:bg-slate-100 transition";
+const btnPrimary =
+  "inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:opacity-95 active:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed";
+
+function BadgeEstado({ estado }: { estado?: string }) {
+  const e = (estado || "").toUpperCase();
+  const map: Record<string, string> = {
+    USO: "bg-emerald-100 text-emerald-700",
+    ALMACEN: "bg-slate-100 text-slate-700",
+    MANTENIMIENTO: "bg-amber-100 text-amber-800",
+    BAJA: "bg-rose-100 text-rose-700",
+  };
+  const cls = map[e] || "bg-slate-100 text-slate-700";
+  return <span className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{e || "—"}</span>;
+}
+
+function EmptyState({ title, desc }: { title: string; desc?: string }) {
+  return (
+    <div className="p-8 text-center">
+      <div className="text-slate-700 font-medium">{title}</div>
+      {desc && <div className="text-sm text-slate-500 mt-1">{desc}</div>}
+    </div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <tr className="animate-pulse">
+      <td className="px-3 py-3">
+        <div className="h-4 w-28 bg-slate-200 rounded" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-4 w-24 bg-slate-200 rounded" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-4 w-16 bg-slate-200 rounded" />
+      </td>
+      <td className="px-3 py-3">
+        <div className="h-8 w-24 bg-slate-200 rounded" />
+      </td>
+    </tr>
+  );
+}
 
 /* ---------- Página ---------- */
 export default function EquipoDetalle() {
@@ -72,8 +121,6 @@ export default function EquipoDetalle() {
   const [addPage, setAddPage] = useState<ItemsPage>({ items: [], total: 0, page: 1, size: 10 });
 
   const areaId = useMemo(() => header?.area_id ?? 0, [header]);
-
-  /* ---------- Helpers estado ---------- */
   const isEnUso = ((header?.estado || edit.estado) ?? "").toUpperCase() === "USO";
 
   /* ---------- Cargas ---------- */
@@ -144,7 +191,7 @@ export default function EquipoDetalle() {
   }, [openAdd, addClase, areaId]);
 
   /* ---------- Acciones ---------- */
-  const onPatch = async (e: React.FormEvent) => {
+  const onPatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setMsg(null);
     setOk(null);
@@ -189,42 +236,55 @@ export default function EquipoDetalle() {
 
   /* ---------- UI ---------- */
   return (
-    <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xl font-semibold">Equipo</div>
+    <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold">{header?.equipo_nombre || "Equipo"}</h1>
+            <BadgeEstado estado={header?.estado} />
+          </div>
           {header && (
-            <div className="text-sm text-slate-600">
-              Área ID: <span className="font-medium">{header.area_id}</span> · Código:{" "}
+            <div className="text-sm text-slate-600 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                Área ID {header.area_id}
+              </span>
+              <span className="text-slate-500">·</span>
               <span className="font-mono">{header.equipo_codigo}</span>
+              <span className="text-slate-500">·</span>
+              <span>
+                Creado:{" "}
+                <b>{header?.created_at ? new Date(header.created_at).toLocaleString() : "-"}</b>
+              </span>
+              <span className="text-slate-500">·</span>
+              <span>
+                Modificado:{" "}
+                <b>{header?.updated_at ? new Date(header.updated_at).toLocaleString() : "-"}</b>
+              </span>
             </div>
           )}
         </div>
         {header && (
-          <Link to={`/areas/${header.area_id}`} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm">
+          <Link to={`/areas/${header.area_id}`} className={btnPrimary}>
             Volver al área
           </Link>
         )}
       </div>
 
-      {msg && <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{msg}</div>}
-      {ok && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">{ok}</div>}
+      {msg && <div className="p-3 rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200">{msg}</div>}
+      {ok && <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{ok}</div>}
 
       {/* Metadatos equipo */}
-      <form onSubmit={onPatch} className="bg-white rounded-2xl shadow p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <form onSubmit={onPatch} className={card + " p-4 md:p-5"}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
           <div>
-            <div className="text-sm text-slate-600">Nombre</div>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              value={edit.nombre}
-              onChange={(e) => setEdit((s) => ({ ...s, nombre: e.target.value }))}
-            />
+            <div className="text-xs text-slate-600 mb-1">Nombre</div>
+            <input className={field} value={edit.nombre} onChange={(e) => setEdit((s) => ({ ...s, nombre: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Estado</div>
+            <div className="text-xs text-slate-600 mb-1">Estado</div>
             <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className={field}
               value={edit.estado}
               onChange={(e) => setEdit((s) => ({ ...s, estado: e.target.value }))}
             >
@@ -235,244 +295,213 @@ export default function EquipoDetalle() {
             </select>
           </div>
           <div>
-            <div className="text-sm text-slate-600">Usuario final</div>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              value={edit.usuario_final}
-              onChange={(e) => setEdit((s) => ({ ...s, usuario_final: e.target.value }))}
-            />
+            <div className="text-xs text-slate-600 mb-1">Usuario final</div>
+            <input className={field} value={edit.usuario_final} onChange={(e) => setEdit((s) => ({ ...s, usuario_final: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Login</div>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              value={edit.login}
-              onChange={(e) => setEdit((s) => ({ ...s, login: e.target.value }))}
-            />
+            <div className="text-xs text-slate-600 mb-1">Login</div>
+            <input className={field} value={edit.login} onChange={(e) => setEdit((s) => ({ ...s, login: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Password</div>
+            <div className="text-xs text-slate-600 mb-1">Password</div>
             <input
               type="password"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className={field}
               value={edit.password}
               onChange={(e) => setEdit((s) => ({ ...s, password: e.target.value }))}
               autoComplete="new-password"
             />
           </div>
-          <div className="text-sm text-slate-600">
-            Ingresó:{" "}
-            <span className="text-slate-800">
-              {header?.created_at ? new Date(header.created_at).toLocaleString() : "-"}
-            </span>
-            <br />
-            Modificado:{" "}
-            <span className="text-slate-800">
-              {header?.updated_at ? new Date(header.updated_at).toLocaleString() : "-"}
-            </span>
+          <div className="md:self-end">
+            <button className={btnPrimary + " w-full md:w-auto"}>Guardar cambios</button>
           </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button className="px-4 py-2 rounded-lg bg-slate-900 text-white">Guardar cambios</button>
         </div>
       </form>
 
       {/* Aviso si no está en USO */}
       {header && !isEnUso && (
-        <div className="p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-sm">
+        <div className="p-3 rounded-xl bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-sm">
           Para agregar ítems <b>en USO</b>, cambia el estado del equipo a <b>USO</b> y guarda.
         </div>
       )}
 
-      {/* Listados asignados + acciones */}
+      {/* Acciones rápidas */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-lg font-semibold">Componentes & Periféricos asignados</div>
         <div className="flex items-center gap-2">
-          {/* Agregar desde ALMACÉN (siempre disponible; si quieres condicionarlo, me dices) */}
           <button
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+            className={btn}
             onClick={() => setOpenAdd(true)}
             disabled={!header}
             title="Asignar ítems existentes en ALMACÉN"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 5l9 4-9 4-9-4 9-4zm0 6l9 4-9 4-9-4 9-4z" />
-            </svg>
-            Agregar (ALMACÉN)
+            📦 Agregar (ALMACÉN)
           </button>
-
-          {/* NUEVO: Agregar EN USO — solo si está en USO */}
           {header && isEnUso && (
             <Link
               to={`/equipos/${header.equipo_id}/agregar-en-uso`}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-300 transition-all shadow-sm"
+              className={btnPrimary}
               title="Crear y asignar nuevos ítems en USO a este equipo"
             >
-              {/* ícono plus dentro de un chip */}
-              <span className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-white/15">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11 11V6h2v5h5v2h-5v5h-2v-5H6v-2z" />
-                </svg>
-              </span>
-              Agregar ítems (EN USO)
+              ➕ Agregar ítems (EN USO)
             </Link>
           )}
         </div>
       </div>
 
+      {/* Tablas asignados */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ItemsAsignados title="Componentes" rows={componentes} onRemove={onRemoveItem} />
-        <ItemsAsignados title="Periféricos" rows={perifericos} onRemove={onRemoveItem} />
+        <ItemsAsignados title="Componentes" rows={componentes} onRemove={onRemoveItem} loading={loading} />
+        <ItemsAsignados title="Periféricos" rows={perifericos} onRemove={onRemoveItem} loading={loading} />
       </div>
 
       {/* Panel Agregar desde ALMACÉN */}
       {openAdd && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center p-3">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-lg p-4 space-y-3 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">Agregar ítems desde almacén</div>
-              <button className="text-slate-600 hover:text-slate-900" onClick={() => setOpenAdd(false)}>
-                Cerrar
-              </button>
+          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div className="font-semibold">Agregar ítems desde almacén</div>
+              <button className={btn} onClick={() => setOpenAdd(false)}>Cerrar</button>
             </div>
 
-            {/* Tabs clase */}
-            <div className="flex gap-2">
-              {(["COMPONENTE", "PERIFERICO"] as const).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => {
-                    setAddClase(c);
-                    setAddFilter({ tipo: "", q: "" });
-                  }}
-                  className={`px-3 py-1.5 rounded-lg ${
-                    addClase === c ? "bg-slate-900 text-white" : "bg-white border border-slate-300"
-                  }`}
-                >
-                  {c === "COMPONENTE" ? "Componentes" : "Periféricos"}
-                </button>
-              ))}
-            </div>
-
-            {/* Filtros */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div className="sm:col-span-2">
-                <div className="text-sm text-slate-600">Tipo</div>
-                <select
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                  value={addFilter.tipo}
-                  onChange={(e) => setAddFilter((f) => ({ ...f, tipo: e.target.value }))}
-                >
-                  <option value="">(Todos)</option>
-                  {addTypeOpts.map((t) => (
-                    <option key={`${t.clase}-${t.id}`} value={t.nombre}>
-                      {t.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <div className="text-sm text-slate-600">Buscar (código)</div>
-                <input
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                  placeholder="Ej. PC-001"
-                  value={addFilter.q}
-                  onChange={(e) => setAddFilter((f) => ({ ...f, q: e.target.value }))}
-                />
-              </div>
-              <div className="sm:col-span-4">
-                <button
-                  className="px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50"
-                  onClick={() => loadDisponibles(1, addPage.size)}
-                  disabled={!areaId}
-                >
-                  Aplicar filtros
-                </button>
-              </div>
-            </div>
-
-            {/* Tabla disponibles */}
-            <div className="bg-white rounded-xl border overflow-hidden flex-1 flex flex-col">
-              <div className="overflow-auto">
-                <table className="min-w-full table-auto">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr className="text-left text-sm text-slate-600">
-                      <th className="px-3 py-2">Código</th>
-                      <th className="px-3 py-2">Tipo</th>
-                      <th className="px-3 py-2">Ingresó</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {addPage.items.map((r) => (
-                      <tr key={r.item_id} className="border-t">
-                        <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
-                        <td className="px-3 py-2">{r.tipo}</td>
-                        <td className="px-3 py-2">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm"
-                            onClick={() => onAddItem(r)}
-                          >
-                            Agregar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {addPage.items.length === 0 && (
-                      <tr>
-                        <td className="px-3 py-6 text-slate-500" colSpan={4}>
-                          No hay ítems disponibles en almacén para esta selección
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Paginación */}
-              <div className="flex items-center justify-between p-3 border-t">
-                <div className="text-sm text-slate-600">
-                  Total: {addPage.total} · Página {addPage.page}
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                    value={addPage.size}
-                    onChange={async (e) => {
-                      const s = Number(e.target.value);
-                      await loadDisponibles(1, s);
+            <div className="p-4 space-y-4">
+              {/* Tabs clase */}
+              <div className="flex gap-2">
+                {(["COMPONENTE", "PERIFERICO"] as const).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => {
+                      setAddClase(c);
+                      setAddFilter({ tipo: "", q: "" });
                     }}
+                    className={`px-3 py-1.5 rounded-xl ${
+                      addClase === c ? "bg-slate-900 text-white" : "bg-white border border-slate-300"
+                    }`}
                   >
-                    {[10, 20, 50].map((n) => (
-                      <option key={n} value={n}>
-                        {n} por página
+                    {c === "COMPONENTE" ? "Componentes" : "Periféricos"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Filtros */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="sm:col-span-2">
+                  <div className="text-xs text-slate-600 mb-1">Tipo</div>
+                  <select
+                    className={field}
+                    value={addFilter.tipo}
+                    onChange={(e) => setAddFilter((f) => ({ ...f, tipo: e.target.value }))}
+                  >
+                    <option value="">(Todos)</option>
+                    {addTypeOpts.map((t) => (
+                      <option key={`${t.clase}-${t.id}`} value={t.nombre}>
+                        {t.nombre}
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-xs text-slate-600 mb-1">Buscar (código)</div>
+                  <input
+                    className={field}
+                    placeholder="Ej. PC-001"
+                    value={addFilter.q}
+                    onChange={(e) => setAddFilter((f) => ({ ...f, q: e.target.value }))}
+                  />
+                </div>
+                <div className="sm:col-span-4">
                   <button
-                    className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm"
-                    disabled={addPage.page <= 1}
-                    onClick={() => loadDisponibles(addPage.page - 1, addPage.size)}
+                    className={btn}
+                    onClick={() => loadDisponibles(1, addPage.size)}
+                    disabled={!areaId}
                   >
-                    Anterior
-                  </button>
-                  <button
-                    className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm"
-                    disabled={addPage.page * addPage.size >= addPage.total}
-                    onClick={() => loadDisponibles(addPage.page + 1, addPage.size)}
-                  >
-                    Siguiente
+                    Aplicar filtros
                   </button>
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end">
-              <button className="px-3 py-2 rounded-lg border border-slate-300" onClick={() => setOpenAdd(false)}>
-                Cerrar
-              </button>
+              {/* Tabla disponibles */}
+              <div className={card + " overflow-hidden"}>
+                <div className="overflow-auto max-h-[50vh]">
+                  <table className="min-w-full table-auto">
+                    <thead className="bg-slate-50 sticky top-0 z-10">
+                      <tr className="text-left text-sm text-slate-600">
+                        <th className="px-3 py-2">Código</th>
+                        <th className="px-3 py-2">Tipo</th>
+                        <th className="px-3 py-2">Ingresó</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {addPage.items.map((r) => (
+                        <tr key={r.item_id} className="border-t">
+                          <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
+                          <td className="px-3 py-2">{r.tipo}</td>
+                          <td className="px-3 py-2">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button className={btnPrimary} onClick={() => onAddItem(r)}>
+                              Agregar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {addPage.items.length === 0 && (
+                        <tr>
+                          <td className="px-3 py-6" colSpan={4}>
+                            <EmptyState
+                              title="No hay ítems disponibles"
+                              desc="Ajusta los filtros o cambia la clase para revisar otros ítems."
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Paginación */}
+                <div className="flex items-center justify-between p-3 border-t">
+                  <div className="text-sm text-slate-600">
+                    Total: {addPage.total} · Página {addPage.page}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className={field + " py-1 w-36"}
+                      value={addPage.size}
+                      onChange={async (e) => {
+                        const s = Number(e.target.value);
+                        await loadDisponibles(1, s);
+                      }}
+                    >
+                      {[10, 20, 50].map((n) => (
+                        <option key={n} value={n}>
+                          {n} por página
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className={btn}
+                      disabled={addPage.page <= 1}
+                      onClick={() => loadDisponibles(addPage.page - 1, addPage.size)}
+                    >
+                      ◀
+                    </button>
+                    <button
+                      className={btn}
+                      disabled={addPage.page * addPage.size >= addPage.total}
+                      onClick={() => loadDisponibles(addPage.page + 1, addPage.size)}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button className={btn} onClick={() => setOpenAdd(false)}>
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -488,13 +517,15 @@ function ItemsAsignados({
   title,
   rows,
   onRemove,
+  loading,
 }: {
   title: string;
   rows: { item_id: number; item_codigo: string; tipo: string; clase: Clase; estado: string }[];
   onRemove: (it: { item_id: number; item_codigo: string; tipo: string; clase: Clase; estado: string }) => void;
+  loading?: boolean;
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow">
+    <div className={card}>
       <div className="p-3 border-b">
         <div className="font-semibold">{title}</div>
       </div>
@@ -505,36 +536,47 @@ function ItemsAsignados({
               <th className="px-3 py-2">Código</th>
               <th className="px-3 py-2">Tipo</th>
               <th className="px-3 py-2">Estado</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.item_id} className="border-t">
-                <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
-                <td className="px-3 py-2">{r.tipo}</td>
-                <td className="px-3 py-2">{r.estado}</td>
-                <td className="px-3 py-2 text-right flex items-center gap-2 justify-end">
-                  <Link
-                    to={`/items/${r.item_id}`}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm"
-                    title="Ver ficha técnica"
-                  >
-                    Ver ficha
-                  </Link>
-                  <button
-                    className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 text-sm"
-                    onClick={() => onRemove(r)}
-                  >
-                    Retirar
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
+            {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={`sk-${i}`} />)}
+            {!loading &&
+              rows.map((r) => (
+                <tr key={r.item_id} className="border-t">
+                  <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
+                  <td className="px-3 py-2">{r.tipo}</td>
+                  <td className="px-3 py-2">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                      {r.estado}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2 justify-end">
+                      <Link
+                        to={`/items/${r.item_id}`}
+                        className={btnPrimary}
+                        title="Ver ficha técnica"
+                      >
+                        Ver ficha
+                      </Link>
+                      <button
+                        className="inline-flex items-center justify-center rounded-xl border border-rose-300 text-rose-700 px-3 py-2 text-sm hover:bg-rose-50 transition"
+                        onClick={() => onRemove(r)}
+                      >
+                        Retirar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            {!loading && rows.length === 0 && (
               <tr>
-                <td className="px-3 py-6 text-slate-500" colSpan={4}>
-                  Sin registros
+                <td className="px-3 py-6" colSpan={4}>
+                  <EmptyState
+                    title="Sin registros"
+                    desc="Aún no hay ítems asignados a este equipo."
+                  />
                 </td>
               </tr>
             )}

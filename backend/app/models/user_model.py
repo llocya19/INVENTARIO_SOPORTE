@@ -25,8 +25,10 @@ SELECT (EXISTS (
 """
 
 def login_and_check(username: str, password: str):
-    with get_conn() as (conn, cur):
-        # 1) Traigo info del usuario por username (sin chequear activo/clave aún)
+    # Abrimos la transacción seteando app.user = username que intenta loguear
+    # (si prefieres, puedes setearlo recién luego de validar la contraseña; abajo te muestro cómo)
+    with get_conn(username) as (conn, cur):
+        # 1) Traer info del usuario por username
         cur.execute("""
           SELECT u.usuario_id, u.usuario_username, u.usuario_area_id, r.rol_nombre,
                  COALESCE(u.usuario_activo, true) AS activo,
@@ -38,15 +40,19 @@ def login_and_check(username: str, password: str):
         row = cur.fetchone()
         if not row:
             return None, "Usuario no existe"
+
         user_id, uname, area_id, rol, activo, hashpwd = row
 
-        # 2) Verifico contraseña con crypt(hash)
+        # 2) Verificar contraseña
         cur.execute("SELECT %s = crypt(%s, %s)", (hashpwd, password, hashpwd))
         ok_pwd = cur.fetchone()[0]
         if not ok_pwd:
             return None, "Contraseña incorrecta"
 
-        # 3) Chequeo activo
+        # (Opcional) Normalizar app.user al nombre real (por si username llegó en otro case)
+        # cur.execute("SELECT set_config('app.user', %s, true);", (uname,))
+
+        # 3) Chequear activo
         if not activo:
             return None, "Usuario desactivado"
 
@@ -58,7 +64,9 @@ def login_and_check(username: str, password: str):
 
         # 5) Último login
         cur.execute("UPDATE inv.usuarios SET usuario_ultimo_login = now() WHERE usuario_id=%s", (user_id,))
+
     return {"id": user_id, "username": uname, "area_id": area_id, "rol": rol}, None
+
 
 
 

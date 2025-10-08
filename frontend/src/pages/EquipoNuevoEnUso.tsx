@@ -17,7 +17,8 @@ type TempItem = {
   codigo: string;
   schema: Attr[];
   specs: SpecKV[];
-  files?: FileList | null;
+  files?: FileList | null;   // seleccionadas desde galería/archivos
+  captured?: File[];         // fotos tomadas con cámara embebida
 };
 
 type EquipoHeaderAPI = {
@@ -126,9 +127,7 @@ export default function EquipoNuevoUso() {
 
   const [currentAreaId, setCurrentAreaId] = useState<number>(aidParam || 0);
   const [equipoHeader, setEquipoHeader] = useState<EquipoHeaderAPI | null>(null);
-  const [yaAsignados, setYaAsignados] = useState<
-    { item_id: number; item_codigo: string; clase: Clase; tipo: string; estado: string }[]
-  >([]);
+  // eliminado yaAsignados (no se usaba)
 
   /* Catálogos */
   const [typesC, setTypesC] = useState<ItemType[]>([]);
@@ -143,6 +142,9 @@ export default function EquipoNuevoUso() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<TempItem | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // Cámara embebida para el draft
+  const [showCam, setShowCam] = useState(false);
 
   /* Estado general */
   const [step, setStep] = useState<1 | 2 | 3>(isAppend ? 2 : 1);
@@ -180,7 +182,7 @@ export default function EquipoNuevoUso() {
           login: h.login || "",
           password: h.password || "",
         });
-        setYaAsignados(Array.isArray(h.items) ? h.items : []);
+        // yaAsignados eliminado
         setStep(2);
       } catch (e: any) {
         setMsg(e?.response?.data?.error || "No se pudo cargar el equipo");
@@ -260,12 +262,12 @@ export default function EquipoNuevoUso() {
     if (index !== null) {
       const row = temp[index];
       const schema = row.schema.length ? row.schema : await loadSchema(row.clase, row.tipo_nombre);
-      setDraft({ ...row, schema });
+      setDraft({ ...row, schema, captured: row.captured || [] });
       setEditingIndex(index);
       setOpen(true);
       return;
     }
-    setDraft({ clase, tipo_nombre: "", codigo: "", schema: [], specs: [], files: null });
+    setDraft({ clase, tipo_nombre: "", codigo: "", schema: [], specs: [], files: null, captured: [] });
     setEditingIndex(null);
     setOpen(true);
   }
@@ -381,9 +383,13 @@ export default function EquipoNuevoUso() {
         });
         const item_id = ir.data.item_id;
 
-        if (row.files && row.files.length > 0) {
+        const captured = row.captured || [];
+        const selected = row.files ? Array.from(row.files) : [];
+        const blobs: File[] = [...selected, ...captured];
+
+        if (blobs.length > 0) {
           const fd = new FormData();
-          Array.from(row.files).forEach((f) => fd.append("files", f));
+          blobs.forEach((f) => fd.append("files", f));
           await http.post(`/api/items/${item_id}/media`, fd, { headers: { "Content-Type": "multipart/form-data" } });
         }
 
@@ -561,6 +567,7 @@ export default function EquipoNuevoUso() {
               <tbody>
                 {tempSlice.map((r, i) => {
                   const idx = (tPage - 1) * tSize + i;
+                  const imgCount = (r.files?.length || 0) + (r.captured?.length || 0);
                   return (
                     <tr key={`tmp-${idx}`} className={`border-t hover:bg-slate-50 ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
                       <td className="px-3 py-2">{r.clase}</td>
@@ -569,7 +576,7 @@ export default function EquipoNuevoUso() {
                       <td className="px-3 py-2">
                         {r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}
                       </td>
-                      <td className="px-3 py-2">{r.files?.length || 0}</td>
+                      <td className="px-3 py-2">{imgCount}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-2">
                           <button className={btnBase} onClick={() => openModal(r.clase, idx)}>Editar</button>
@@ -685,15 +692,18 @@ export default function EquipoNuevoUso() {
                 </tr>
               </thead>
               <tbody>
-                {temp.map((r, i) => (
-                  <tr key={`rev-${i}`} className={`border-t ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
-                    <td className="px-3 py-2">{r.clase}</td>
-                    <td className="px-3 py-2">{r.tipo_nombre}</td>
-                    <td className="px-3 py-2">{r.codigo}</td>
-                    <td className="px-3 py-2">{r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}</td>
-                    <td className="px-3 py-2">{r.files?.length || 0}</td>
-                  </tr>
-                ))}
+                {temp.map((r, i) => {
+                  const imgCount = (r.files?.length || 0) + (r.captured?.length || 0);
+                  return (
+                    <tr key={`rev-${i}`} className={`border-t ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
+                      <td className="px-3 py-2">{r.clase}</td>
+                      <td className="px-3 py-2">{r.tipo_nombre}</td>
+                      <td className="px-3 py-2">{r.codigo}</td>
+                      <td className="px-3 py-2">{r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}</td>
+                      <td className="px-3 py-2">{imgCount}</td>
+                    </tr>
+                  );
+                })}
                 {temp.length === 0 && (
                   <tr>
                     <td className="px-3 py-6 text-slate-500" colSpan={5}>Sin ítems</td>
@@ -769,17 +779,43 @@ export default function EquipoNuevoUso() {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs md:text-sm text-slate-600 block mb-1">Imágenes</label>
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                className={fieldBase}
-                onChange={(e) => setDraft({ ...draft, files: e.target.files })}
-              />
+            {/* Imágenes: solo Subir/Cámara + Tomar foto */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs md:text-sm text-slate-600">Imágenes</label>
+                <div className="flex items-center gap-2">
+                  <label className={btnBase + " text-sm cursor-pointer"}>
+                    Subir / Cámara
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => setDraft({ ...draft, files: e.target.files })}
+                      title="Abrirá cámara en móvil o galería/archivos"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={btnBase + " text-sm"}
+                    onClick={() => setShowCam(true)}
+                  >
+                    📷 Tomar foto
+                  </button>
+                </div>
+              </div>
+              <div className="text-xs text-slate-600">
+                Listas para subir:{" "}
+                <span className="font-semibold">
+                  {(draft.files?.length || 0) + (draft.captured?.length || 0)}
+                </span>{" "}
+                {draft.files?.length ? `(seleccionadas: ${draft.files.length}) ` : ""}
+                {draft.captured?.length ? `(capturadas: ${draft.captured.length})` : ""}
+              </div>
             </div>
 
+            {/* Ficha técnica */}
             <div className="space-y-2">
               {draft.schema.length === 0 ? (
                 <div className="text-sm text-slate-500">Selecciona un tipo para ver la ficha…</div>
@@ -853,6 +889,107 @@ export default function EquipoNuevoUso() {
           </div>
         )}
       </Sheet>
+
+      {/* Cámara embebida para el Sheet */}
+      {showCam && draft && (
+        <CamSheet
+          onClose={() => setShowCam(false)}
+          onCapture={(file) =>
+            setDraft((d) => {
+              if (!d) return d;
+              const prev = d.captured || [];
+              return { ...d, captured: [...prev, file] };
+            })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/* ======= Cámara embebida (getUserMedia) SIN PARPADEO ======= */
+function CamSheet({ onClose, onCapture }: { onClose: () => void; onCapture: (f: File) => void }) {
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  // usamos un ref global por componente para no re-renderizar por el stream
+  const streamRef = (window as any).__equiponuevo_stream_ref ?? { current: null as MediaStream | null };
+  (window as any).__equiponuevo_stream_ref = streamRef;
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!streamRef.current) {
+          const s = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } },
+            audio: false,
+          });
+          if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
+          streamRef.current = s;
+        }
+
+        const v = videoEl;
+        if (v && v.srcObject !== streamRef.current) {
+          (v as any).srcObject = streamRef.current;
+          try { await v.play(); } catch {}
+          setReady(true);
+        }
+      } catch {
+        onClose();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      const s = streamRef.current;
+      streamRef.current = null;
+      s?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+    };
+    // deps intencionalmente mínimas para evitar re-llamadas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoEl]);
+
+  async function capture() {
+    if (!videoEl) return;
+    const w = videoEl.videoWidth || 1280;
+    const h = videoEl.videoHeight || 720;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    const blob: Blob = await new Promise((res) =>
+      canvas.toBlob((b) => res(b as Blob), "image/jpeg", 0.8)!
+    );
+    const file = new File([blob], `cam_${Date.now()}.jpg`, { type: "image/jpeg" });
+    onCapture(file);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow w-full max-w-md overflow-hidden">
+        <div className="px-4 py-3 border-b font-semibold">Cámara</div>
+        <div className="p-3">
+          <video
+            ref={setVideoEl}
+            autoPlay
+            playsInline
+            muted
+            className="w-full rounded-lg bg-black"
+            style={{ aspectRatio: "16/9", objectFit: "cover" }}
+          />
+        </div>
+        <div className="px-4 py-3 border-t flex items-center justify-between">
+          <button className="px-3 py-2 rounded-lg border" onClick={onClose}>Cerrar</button>
+          <button
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50"
+            disabled={!ready}
+            onClick={capture}
+          >
+            Tomar foto
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

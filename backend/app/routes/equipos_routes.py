@@ -1,6 +1,6 @@
 # backend/app/routes/equipos_routes.py
 from flask import Blueprint, request, jsonify
-from app.core.security import require_auth, require_admin
+from app.core.security import require_auth, require_admin, require_roles
 from app.models.equipo_model import (
     list_area_equipos,
     list_area_equipos_paged,
@@ -57,8 +57,7 @@ def items_disponibles(area_id: int):
 
 
 @bp.post("/areas/<int:area_id>/equipos")
-@require_auth
-@require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])  # <- ya permitía ADMIN y PRACTICANTE
 def crear_equipo(area_id: int):
     d = request.get_json(force=True)
     codigo = (d.get("codigo") or "").strip()
@@ -84,7 +83,7 @@ def crear_equipo(area_id: int):
 # --------- ASIGNAR ÍTEM A EQUIPO (para flujo "nuevo en uso") ----------
 @bp.post("/equipos/<int:equipo_id>/items")
 @require_auth
-@require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
 def asignar_item(equipo_id: int):
     d = request.get_json(force=True)
     item_id = d.get("item_id")
@@ -100,7 +99,7 @@ def asignar_item(equipo_id: int):
 
 @bp.delete("/equipos/<int:equipo_id>/items/<int:item_id>")
 @require_auth
-@require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
 def retirar_item(equipo_id: int, item_id: int):
     err = unassign_item(request.claims["username"], equipo_id, item_id)
     if err:
@@ -110,7 +109,7 @@ def retirar_item(equipo_id: int, item_id: int):
 
 @bp.patch("/equipos/<int:equipo_id>")
 @require_auth
-@require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
 def editar_equipo(equipo_id: int):
     d = request.get_json(force=True)
     err = update_equipo_meta(
