@@ -47,10 +47,6 @@ def create_item_with_specs(
     area_id: int,           # subárea o raíz EXACTA
     specs: Dict[str, Any],
 ) -> int:
-    """
-    Crea un ítem en el area_id exacto (subárea o raíz) y registra ENTRADA en esa misma área.
-    Requiere que exista la SP: inv.sp_crear_item_con_ficha_en_area_id(...)
-    """
     with get_conn(app_user) as (conn, cur):
         cur.execute(
             "CALL inv.sp_crear_item_con_ficha_en_area_id(%s,%s,%s,%s,%s::jsonb)",
@@ -77,6 +73,26 @@ def get_item_detail(app_user: str, item_id: int) -> Optional[Dict[str, Any]]:
         r = cur.fetchone()
         if not r:
             return None
+
+    # --- Normaliza fotos: acepta lista de strings o dicts con url/path ---
+    raw_fotos = r[8] or []
+    fotos_norm: List[Dict[str, Any]] = []
+    if isinstance(raw_fotos, list):
+        for f in raw_fotos:
+            if isinstance(f, str):
+                if f.strip():
+                    fotos_norm.append({"path": f.strip(), "principal": False, "orden": None})
+            elif isinstance(f, dict):
+                p = (f.get("path") or f.get("url") or "").strip()
+                if p:
+                    fotos_norm.append({
+                        "path": p,
+                        "principal": bool(f.get("principal", False)),
+                        "orden": f.get("orden"),
+                        "created_at": f.get("created_at"),
+                    })
+    # ---------------------------------------------------------------------
+
     return {
         "item_id": r[0],
         "item_codigo": r[1],
@@ -86,7 +102,7 @@ def get_item_detail(app_user: str, item_id: int) -> Optional[Dict[str, Any]]:
         "area_id": r[5],
         "area_nombre": r[6],
         "ficha": r[7] or {},
-        "fotos": r[8] or [],
+        "fotos": fotos_norm,
         "created_at": r[9],
     }
 
@@ -105,11 +121,9 @@ def upsert_attribute_and_value(
     if data_type not in ("text", "int", "numeric", "bool", "date"):
         return "data_type inválido"
     with get_conn(app_user) as (conn, cur):
-        # Asegura atributo (SP ya existente)
         cur.execute("CALL inv.sp_definir_atributo(%s,%s,%s,%s,NULL)",
                     (clase, tipo_nombre, nombre_attr, data_type))
 
-        # Busca attr_id
         cur.execute(
             """
             SELECT sa.attr_id
@@ -125,7 +139,6 @@ def upsert_attribute_and_value(
             return "No se obtuvo attr_id"
         attr_id = int(row[0])
 
-        # Existe valor?
         cur.execute("SELECT 1 FROM inv.spec_valores WHERE item_id=%s AND attr_id=%s",
                     (item_id, attr_id))
         exists = cur.fetchone() is not None
@@ -151,7 +164,7 @@ def upsert_attribute_and_value(
     return None
 
 # =========================
-# Fotos
+# Fotos (media) → vía SP que recibe item_codigo
 # =========================
 def add_photo(
     app_user: str,
@@ -166,20 +179,33 @@ def add_photo(
         if not r:
             return "Item no existe"
         item_codigo = r[0]
-        cur.execute(
-            "CALL inv.sp_item_agregar_foto(%s,%s,%s,%s)",
-            (item_codigo, url, es_principal, orden),
-        )
+        try:
+            cur.execute(
+                "CALL inv.sp_item_agregar_foto(%s,%s,%s,%s)",
+                (item_codigo, url, es_principal, orden),
+            )
+        except Exception as e:
+            return f"No se pudo registrar la foto: {e}"
+    return None
+
+def remove_photo(app_user: str, item_id: int, url_or_path: str) -> Optional[str]:
+    """
+    Borra el registro de foto por URL/Path exacto. Soporta columnas url o path.
+    """
+    with get_conn(app_user) as (conn, cur):
+        try:
+            cur.execute("""
+                DELETE FROM inv.item_fotos
+                WHERE item_id = %s AND (url = %s OR path = %s)
+            """, (item_id, url_or_path, url_or_path))
+        except Exception as e:
+            return f"No se pudo eliminar la foto en BD: {e}"
     return None
 
 # =========================
 # Sugerencia de código
 # =========================
 def suggest_next_code(app_user: str, clase: str, tipo_nombre: str, area_id: int) -> str:
-    """
-    Sugerir siguiente código para el tipo. Usa los últimos códigos creados
-    (ordenados por i.created_at DESC) y extrae sufijo numérico.
-    """
     with get_conn(app_user) as (conn, cur):
         cur.execute(
             "SELECT item_tipo_id FROM inv.item_tipos WHERE clase=%s AND lower(nombre)=lower(%s)",

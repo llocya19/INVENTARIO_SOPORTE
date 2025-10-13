@@ -1,6 +1,7 @@
+from typing import List, Dict
 from app.db import get_conn
 
-def get_attrs_for_type(app_user: str, clase: str, tipo_nombre: str):
+def get_attrs_for_type(app_user: str, clase: str, tipo_nombre: str) -> List[Dict]:
     with get_conn(app_user) as (conn, cur):
         cur.execute("""
           SELECT sa.nombre_attr, sa.data_type, sa.orden

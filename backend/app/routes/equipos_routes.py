@@ -1,8 +1,6 @@
-# backend/app/routes/equipos_routes.py
 from flask import Blueprint, request, jsonify
-from app.core.security import require_auth, require_admin, require_roles
+from app.core.security import require_auth, require_roles
 from app.models.equipo_model import (
-    list_area_equipos,
     list_area_equipos_paged,
     get_equipo_detalle,
     list_items_disponibles,
@@ -10,7 +8,9 @@ from app.models.equipo_model import (
     assign_item_to_equipo,
     unassign_item,
     update_equipo_meta,
-    get_next_equipo_code,   # <-- NUEVO IMPORT
+    get_next_equipo_code,
+    prestar_item,
+    devolver_item,
 )
 
 bp = Blueprint("equipos", __name__, url_prefix="/api")
@@ -28,7 +28,6 @@ def equipo_detalle(equipo_id: int):
 @bp.get("/areas/<int:area_id>/equipos")
 @require_auth
 def equipos_de_area(area_id: int):
-    # filtros y paginación (opcionales)
     estado = request.args.get("estado")
     fdes = request.args.get("desde")
     fhas = request.args.get("hasta")
@@ -57,7 +56,7 @@ def items_disponibles(area_id: int):
 
 
 @bp.post("/areas/<int:area_id>/equipos")
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- ya permitía ADMIN y PRACTICANTE
+@require_roles(["ADMIN", "PRACTICANTE"])
 def crear_equipo(area_id: int):
     d = request.get_json(force=True)
     codigo = (d.get("codigo") or "").strip()
@@ -80,10 +79,9 @@ def crear_equipo(area_id: int):
     return {"equipo_id": equipo_id}
 
 
-# --------- ASIGNAR ÍTEM A EQUIPO (para flujo "nuevo en uso") ----------
 @bp.post("/equipos/<int:equipo_id>/items")
 @require_auth
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])
 def asignar_item(equipo_id: int):
     d = request.get_json(force=True)
     item_id = d.get("item_id")
@@ -99,7 +97,7 @@ def asignar_item(equipo_id: int):
 
 @bp.delete("/equipos/<int:equipo_id>/items/<int:item_id>")
 @require_auth
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])
 def retirar_item(equipo_id: int, item_id: int):
     err = unassign_item(request.claims["username"], equipo_id, item_id)
     if err:
@@ -109,7 +107,7 @@ def retirar_item(equipo_id: int, item_id: int):
 
 @bp.patch("/equipos/<int:equipo_id>")
 @require_auth
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])
 def editar_equipo(equipo_id: int):
     d = request.get_json(force=True)
     err = update_equipo_meta(
@@ -126,16 +124,9 @@ def editar_equipo(equipo_id: int):
     return {"ok": True}
 
 
-# --------- NUEVO: siguiente código sugerido ----------
 @bp.get("/areas/<int:area_id>/equipos/next-code")
 @require_auth
 def equipos_next_code(area_id: int):
-    """
-    Devuelve el próximo código sugerido para un equipo en esta área.
-    Params opcionales:
-      - prefix: ej. 'PC-' (por defecto 'PC-')
-      - pad: largo del zero-padding, ej. 3 => 001
-    """
     prefix = request.args.get("prefix", default=None, type=str)
     pad = request.args.get("pad", default=3, type=int)
     try:
@@ -143,3 +134,32 @@ def equipos_next_code(area_id: int):
         return jsonify({"next_code": next_code})
     except Exception as e:
         return {"error": f"No se pudo calcular el siguiente código: {e}"}, 400
+
+
+# -------- PRÉSTAMO / DEVOLUCIÓN -------------
+@bp.post("/items/<int:item_id>/prestar")
+@require_auth
+@require_roles(["ADMIN", "PRACTICANTE"])
+def prestar_item_route(item_id: int):
+    d = request.get_json(force=True) or {}
+    destino_area_id = d.get("destino_area_id")
+    mov_equipo_id   = d.get("equipo_id")  # opcional
+    detalle         = d.get("detalle") or {}
+    if not destino_area_id:
+        return {"error": "destino_area_id es requerido"}, 400
+
+    ok, err = prestar_item(request.claims["username"], item_id, int(destino_area_id), detalle, mov_equipo_id)
+    if not ok:
+        return {"error": err or "No se pudo prestar"}, 400
+    return {"ok": True}
+
+
+@bp.post("/items/<int:item_id>/devolver")
+@require_auth
+@require_roles(["ADMIN", "PRACTICANTE"])
+def devolver_item_route(item_id: int):
+    d = request.get_json(silent=True) or {}
+    ok, err = devolver_item(request.claims["username"], item_id, d.get("detalle"))
+    if not ok:
+        return {"error": err or "No se pudo devolver"}, 400
+    return {"ok": True}

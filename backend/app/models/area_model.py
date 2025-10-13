@@ -1,5 +1,5 @@
 # app/models/area_model.py
-from typing import Optional, Any, List, Dict
+from typing import Optional, Any, Dict, List
 from app.db import get_conn
 
 # -------------------------
@@ -38,90 +38,180 @@ def list_area_items(
     page: int = 1,
     size: int = 10,
     tipo_nombre: Optional[str] = None,
-    fecha_desde: Optional[str] = None,  # 'YYYY-MM-DD'
-    fecha_hasta: Optional[str] = None,  # 'YYYY-MM-DD'
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
 ):
+    """
+    Devuelve:
+      A) Ítems propios del área (v.area_id = area_id). Si están EN_USO_PRESTADO,
+         arma 'prestamo_text' = 'a {destino} · PC-xxx' y puede_devolver = TRUE.
+      B) Ítems prestados que este área está usando (estado PRESTAMO) detectados por
+         equipos.equipo_area_id = area_id (destino). Arma 'prestamo_text' = 'de {origen} · PC-xxx'.
+    """
     p = max(1, int(page or 1))
     s = min(100, max(1, int(size or 10)))
     off = (p - 1) * s
 
-    base_sql = """
-      SELECT
-        v.item_id,
-        v.item_codigo,
-        v.clase,
-        v.tipo,
-        v.estado,
-        v.created_at,
-        e.equipo_id,
-        e.equipo_codigo,
-        e.equipo_nombre,
-        v.ficha,
-        COUNT(*) OVER() AS total_rows
+    filtros: List[str] = []
+    params_common: List[Any] = []
+
+    if clase:
+        filtros.append("v.clase = %s")
+        params_common.append(clase)
+
+    if estado:
+        filtros.append("v.estado = %s")
+        params_common.append(estado)
+
+    if tipo_nombre:
+        filtros.append("lower(v.tipo) = lower(%s)")
+        params_common.append(tipo_nombre)
+
+    if fecha_desde:
+        filtros.append("v.created_at::date >= %s::date")
+        params_common.append(fecha_desde)
+
+    if fecha_hasta:
+        filtros.append("v.created_at::date <= %s::date")
+        params_common.append(fecha_hasta)
+
+    where_extra = (" AND " + " AND ".join(filtros)) if filtros else ""
+
+    select_cols = """
+      v.item_id,
+      v.item_codigo,
+      v.clase,
+      v.tipo,
+      v.estado,
+      v.created_at,
+      e.equipo_id,
+      e.equipo_codigo,
+      e.equipo_nombre,
+      v.ficha,
+      ao.area_id   AS origen_area_id,
+      ao.area_nombre AS origen_area_nombre,
+      ea.area_id   AS destino_area_id,
+      ea.area_nombre AS destino_area_nombre
+    """
+
+    # 🔧 FIX: usar e.equipo_area_id (no existe e.area_id)
+    from_joins = """
       FROM inv.vw_items_con_ficha_y_fotos v
       LEFT JOIN inv.equipo_items ei ON ei.item_id = v.item_id
       LEFT JOIN inv.equipos      e  ON e.equipo_id = ei.equipo_id
-      WHERE v.area_id = %s
+      LEFT JOIN inv.areas ao ON ao.area_id = v.area_id                -- dueño del ítem
+      LEFT JOIN inv.areas ea ON ea.area_id = e.equipo_area_id         -- área del equipo (destino)
     """
-    params = [area_id]
 
-    if clase:
-        base_sql += " AND v.clase = %s"
-        params.append(clase)
+    # A) Ítems propios del área
+    sql_propios = f"""
+      SELECT
+        {select_cols},
+        FALSE AS es_prestamo_recibido,
+        CASE
+          WHEN v.estado = 'EN_USO_PRESTADO' THEN
+            CONCAT(
+              'a ',
+              COALESCE(ea.area_nombre, 'otra área'),
+              COALESCE(CONCAT(' · ', e.equipo_codigo), '')
+            )
+          ELSE NULL
+        END AS prestamo_text,
+        CASE
+          WHEN v.estado = 'EN_USO_PRESTADO' AND v.area_id = %s THEN TRUE
+          ELSE FALSE
+        END AS puede_devolver
+      {from_joins}
+      WHERE v.area_id = %s
+      {where_extra}
+    """
+    params_propios = [area_id, area_id] + params_common
 
-    if estado:
-        base_sql += " AND v.estado = %s"
-        params.append(estado)
+    # B) Ítems prestados que este área está usando
+    # 🔧 FIX: condición por destino usando e.equipo_area_id
+    sql_recibidos = f"""
+      SELECT
+        {select_cols},
+        TRUE AS es_prestamo_recibido,
+        CASE
+          WHEN v.estado = 'PRESTAMO' THEN
+            CONCAT(
+              'de ',
+              COALESCE(ao.area_nombre, 'otra área'),
+              COALESCE(CONCAT(' · ', e.equipo_codigo), '')
+            )
+          ELSE NULL
+        END AS prestamo_text,
+        FALSE AS puede_devolver
+      {from_joins}
+      WHERE v.estado = 'PRESTAMO'
+        AND e.equipo_area_id = %s
+        AND v.area_id <> %s
+      {where_extra}
+    """
+    params_recibidos = [area_id, area_id] + params_common
 
-    if tipo_nombre:
-        base_sql += " AND lower(v.tipo) = lower(%s)"
-        params.append(tipo_nombre)
-
-    if fecha_desde:
-        base_sql += " AND v.created_at::date >= %s::date"
-        params.append(fecha_desde)
-
-    if fecha_hasta:
-        base_sql += " AND v.created_at::date <= %s::date"
-        params.append(fecha_hasta)
-
-    base_sql += """
+    sql_union = f"""
+      WITH u AS (
+        {sql_propios}
+        UNION ALL
+        {sql_recibidos}
+      )
+      SELECT
+        *,
+        COUNT(*) OVER() AS total_rows
+      FROM u
       ORDER BY
-        CASE v.estado WHEN 'EN_USO' THEN 0 ELSE 1 END,
-        lower(v.tipo),
-        v.item_codigo
+        CASE estado
+          WHEN 'EN_USO' THEN 0
+          WHEN 'EN_USO_PRESTADO' THEN 1
+          WHEN 'PRESTAMO' THEN 2
+          ELSE 9
+        END,
+        lower(tipo),
+        item_codigo
       LIMIT %s OFFSET %s
     """
-    params.extend([s, off])
+    params = params_propios + params_recibidos + [s, off]
 
     with get_conn(app_user) as (conn, cur):
-        cur.execute(base_sql, params)
+        cur.execute(sql_union, params)
         rows = cur.fetchall()
 
-    items = []
+    IDX = {
+        "item_id": 0, "item_codigo": 1, "clase": 2, "tipo": 3, "estado": 4, "created_at": 5,
+        "equipo_id": 6, "equipo_codigo": 7, "equipo_nombre": 8, "ficha": 9,
+        "origen_area_id":10, "origen_area_nombre":11, "destino_area_id":12, "destino_area_nombre":13,
+        "es_prestamo_recibido":14, "prestamo_text":15, "puede_devolver":16, "total_rows":17
+    }
+
+    items: List[Dict[str, Any]] = []
     total = 0
     for r in rows:
-        total = r[10]
+        total = r[IDX["total_rows"]]
         items.append({
-            "item_id": r[0],
-            "item_codigo": r[1],
-            "clase": r[2],
-            "tipo": r[3],
-            "estado": r[4],
-            "created_at": r[5],
-            "equipo": None if r[6] is None else {
-                "equipo_id": r[6],
-                "equipo_codigo": r[7],
-                "equipo_nombre": r[8],
+            "item_id": r[IDX["item_id"]],
+            "item_codigo": r[IDX["item_codigo"]],
+            "clase": r[IDX["clase"]],
+            "tipo": r[IDX["tipo"]],
+            "estado": r[IDX["estado"]],
+            "created_at": r[IDX["created_at"]],
+            "equipo": None if r[IDX["equipo_id"]] is None else {
+                "equipo_id": r[IDX["equipo_id"]],
+                "equipo_codigo": r[IDX["equipo_codigo"]],
+                "equipo_nombre": r[IDX["equipo_nombre"]],
             },
-            "ficha": r[9] or {},
+            "ficha": r[IDX["ficha"]] or {},
+            "prestamo_text": r[IDX["prestamo_text"]],
+            "puede_devolver": bool(r[IDX["puede_devolver"]]),
+            "es_prestamo_recibido": bool(r[IDX["es_prestamo_recibido"]]),
         })
 
     return {"items": items, "total": int(total or 0), "page": p, "size": s}
 
 
 # -----------------------------------------
-# Equipos (paginado + filtros para la vista del área)
+# Equipos (proxy al model de equipos)
 # -----------------------------------------
 def list_area_equipos_paged(
     app_user: str,
@@ -134,12 +224,13 @@ def list_area_equipos_paged(
     size: int = 10,
     orden: Optional[str] = None,
 ) -> Dict[str, Any]:
+    # Si no usas este proxy, puedes borrarlo. Lo dejo intacto por compatibilidad.
     from app.models.equipo_model import list_area_equipos_paged as _inner
-    return _inner(app_user, area_id, estado, q, fdesde, fhasta, page, size, orden)
+    return _inner(app_user, area_id, estado, fdesde, fhasta, page, size)
 
 
 # -----------------------------------------
-# Altas
+# Altas de áreas
 # -----------------------------------------
 
 def create_root_area(app_user: str, nombre: str) -> int:

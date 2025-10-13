@@ -1,7 +1,8 @@
+# app/routes/media_routes.py
 import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
-from app.core.security import require_auth, require_admin, require_roles
+from app.core.security import require_auth, require_roles
 from app.models.media_model import add_media, delete_media
 
 bp = Blueprint("item_media", __name__, url_prefix="/api/items")
@@ -14,7 +15,7 @@ def upload_item_media(item_id: int):
     """
     Sube una o más imágenes para el item_id dado.
     - Espera 'files' (input multiple) en multipart/form-data.
-    - Valida extensión y guarda en instance/uploads con nombre único.
+    - Guarda en instance/uploads con nombre único.
     - Registra cada archivo vía add_media (no principal por defecto).
     """
     files = request.files.getlist("files")
@@ -32,7 +33,10 @@ def upload_item_media(item_id: int):
             return {"error": f"Extensión no permitida: {ext}"}, 400
 
         # Nombre seguro y único
-        fname = secure_filename(f.filename)
+        srcname = f.filename or f"img.{ext}"
+        fname = secure_filename(srcname)
+        if not fname:
+            fname = f"img.{ext}"
         path_fs = os.path.join(updir, fname)
         base, ex = os.path.splitext(fname)
         i = 1
@@ -44,19 +48,18 @@ def upload_item_media(item_id: int):
         # Guardar a disco
         f.save(path_fs)
 
-        # Ruta pública (sirve tu /uploads desde static/instance)
+        # Ruta pública (sirve /uploads desde instance/)
         rel = f"/uploads/{fname}"
 
         # Registrar en BD
-        try:
-            add_media(request.claims["username"], item_id, rel, es_principal=False, orden=None)
-        except Exception as e:
-            # Si falla la BD, revertimos archivo físico
+        err = add_media(request.claims["username"], item_id, rel, es_principal=False, orden=None)
+        if err:
+            # revertir archivo si falla BD
             try:
                 os.remove(path_fs)
             except Exception:
                 pass
-            return {"error": str(e)}, 400
+            return {"error": err}, 400
 
         saved.append(rel)
 
@@ -65,13 +68,12 @@ def upload_item_media(item_id: int):
 
 @bp.delete("/<int:item_id>/media")
 @require_auth
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])
 def remove_item_media(item_id: int):
     """
     Elimina una imagen del item. Acepta 'path' por query o JSON body.
-    Requiere rol ADMIN o PRACTICANTE.
     """
-    path = request.args.get("path", "").strip()
+    path = (request.args.get("path") or "").strip()
     if not path:
         data = request.get_json(silent=True) or {}
         path = (data.get("path") or "").strip()

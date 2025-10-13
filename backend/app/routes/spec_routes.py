@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.core.security import require_auth, require_admin, require_roles
+from app.core.security import require_auth, require_roles
 from app.models.spec_model import get_attrs_for_type, define_attr
 
 bp = Blueprint("spec", __name__, url_prefix="/api/spec")
@@ -15,7 +15,7 @@ def attrs_for_type():
 
 @bp.post("/attrs")
 @require_auth
-@require_roles(["ADMIN", "PRACTICANTE"])  # <- antes: @require_admin
+@require_roles(["ADMIN", "PRACTICANTE"])
 def create_attr():
     d = request.get_json(force=True)
     clase = (d.get("clase") or "").upper()

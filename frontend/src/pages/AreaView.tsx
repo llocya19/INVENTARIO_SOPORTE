@@ -15,6 +15,10 @@ type ItemRow = {
   created_at?: string | null;
   equipo?: { equipo_id: number; equipo_codigo: string; equipo_nombre: string } | null;
   ficha?: Record<string, any>;
+  // nuevos
+  prestamo_text?: string | null;
+  puede_devolver?: boolean;
+  es_prestamo_recibido?: boolean;
 };
 type ItemsPage = { items: ItemRow[]; total: number; page: number; size: number };
 
@@ -289,7 +293,7 @@ export default function AreaView() {
     loadStatic();
     loadPagedItems("COMPONENTE", 1, compPage.size, compFilter);
     loadPagedItems("PERIFERICO", 1, periPage.size, periFilter);
-    loadPagedEquipos(1, eqPage.size, eqFilter);
+    loadPagedEquipos(1, eqPage.size, { estado: "", desde: "", hasta: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaId]);
 
@@ -419,6 +423,19 @@ export default function AreaView() {
   const onChangeSizeEquipos = async (size: number) => { await loadPagedEquipos(1, size, eqFilter); setEqPage((p) => ({ ...p, size })); };
   const applyFiltersEquipos = async () => { await loadPagedEquipos(1, eqPage.size, eqFilter); };
 
+  /* ---------- Devolución ---------- */
+  async function doDevolver(item: ItemRow) {
+    if (!confirm(`¿Devolver ${item.item_codigo} a ALMACEN?`)) return;
+    setMsg(null);
+    try {
+      await http.post(`/api/items/${item.item_id}/devolver`);
+      setOk(`Ítem ${item.item_codigo} devuelto a ALMACEN`);
+      await loadPagedItems(item.clase, item.clase === "COMPONENTE" ? compPage.page : periPage.page, item.clase === "COMPONENTE" ? compPage.size : periPage.size, item.clase === "COMPONENTE" ? compFilter : periFilter);
+    } catch (e: any) {
+      setMsg(e?.response?.data?.error || "No se pudo devolver el ítem");
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       {/* App bar */}
@@ -459,11 +476,7 @@ export default function AreaView() {
             <div className="inline-flex rounded-lg shadow-sm overflow-hidden">
               <Button
                 variant={tab === "EQUIPOS" ? "primary" : "secondary"}
-                onClick={() => {
-                  setTab("EQUIPOS");
-                  setForm({ tipo_nombre: "", codigo: "", specs: [] });
-                  setSchema([]); setFiles(null); setCaptured([]);
-                }}
+                onClick={() => setTab("EQUIPOS")}
                 className="rounded-none"
               >
                 Equipos
@@ -502,11 +515,7 @@ export default function AreaView() {
           <Button
             key={t}
             variant={tab === t ? "primary" : "secondary"}
-            onClick={() => {
-              setTab(t);
-              setForm({ tipo_nombre: "", codigo: "", specs: [] });
-              setSchema([]); setFiles(null); setCaptured([]);
-            }}
+            onClick={() => setTab(t)}
           >
             {t === "COMPONENTE" ? "Componentes" : "Periféricos"}
           </Button>
@@ -564,6 +573,7 @@ export default function AreaView() {
       )}
 
       {/* Form crear item */}
+      {/* (Se mantiene igual que antes para registrar componentes/periféricos con fotos y ficha) */}
       {tab !== "EQUIPOS" && (
         <form onSubmit={createItem} className="bg-white rounded-2xl shadow-sm border p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -695,10 +705,20 @@ export default function AreaView() {
 
       {/* Listas paginadas */}
       {tab === "COMPONENTE" && (
-        <ItemsTable page={compPage} onPage={(p) => onChangePageItems("COMPONENTE", p)} onSize={(s) => onChangeSizeItems("COMPONENTE", s)} />
+        <ItemsTable
+          page={compPage}
+          onPage={(p) => onChangePageItems("COMPONENTE", p)}
+          onSize={(s) => onChangeSizeItems("COMPONENTE", s)}
+          onDevolver={doDevolver}
+        />
       )}
       {tab === "PERIFERICO" && (
-        <ItemsTable page={periPage} onPage={(p) => onChangePageItems("PERIFERICO", p)} onSize={(s) => onChangeSizeItems("PERIFERICO", s)} />
+        <ItemsTable
+          page={periPage}
+          onPage={(p) => onChangePageItems("PERIFERICO", p)}
+          onSize={(s) => onChangeSizeItems("PERIFERICO", s)}
+          onDevolver={doDevolver}
+        />
       )}
 
       {/* Equipos */}
@@ -735,51 +755,6 @@ export default function AreaView() {
         </>
       )}
 
-      {/* Modales */}
-      {showNewAttr && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow p-4 w-full max-w-md">
-            <div className="text-lg font-semibold mb-2">Nuevo campo para {form.tipo_nombre || "tipo"}</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <div className="text-sm text-slate-600 mb-1">Nombre del atributo</div>
-                <input className="w-full rounded-lg border border-slate-300 px-3 py-2 bg-white" value={newAttr.nombre} onChange={(e) => setNewAttr({ ...newAttr, nombre: e.target.value })} placeholder="p. ej. CAPACIDAD_GB" />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600 mb-1">Tipo de dato</div>
-                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 bg-white" value={newAttr.data_type} onChange={(e) => setNewAttr({ ...newAttr, data_type: e.target.value as Attr["data_type"] })}>
-                  <option value="text">text</option>
-                  <option value="int">int</option>
-                  <option value="numeric">numeric</option>
-                  <option value="bool">bool</option>
-                  <option value="date">date</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setShowNewAttr(false)}>Cancelar</Button>
-              <Button variant="primary" onClick={createAttr}>Crear</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showNewType && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow p-4 w-full max-w-md">
-            <div className="text-lg font-semibold mb-2">Nuevo tipo ({claseActual === "COMPONENTE" ? "Componente" : "Periférico"})</div>
-            <div>
-              <div className="text-sm text-slate-600 mb-1">Nombre del tipo</div>
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 bg-white" placeholder="p. ej. DISCO, MEMORIA, TECLADO…" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} />
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setShowNewType(false)}>Cancelar</Button>
-              <Button variant="primary" onClick={createType}>Crear tipo</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Cámara */}
       <CameraCapture open={showCam} onClose={() => setShowCam(false)} onCapture={(blob) => setCaptured((arr) => [...arr, blob])} />
     </div>
@@ -789,7 +764,12 @@ export default function AreaView() {
 /* =========================================================
    Tablas
 ========================================================= */
-function ItemsTable({ page, onPage, onSize }: { page: ItemsPage; onPage: (p: number) => void; onSize: (s: number) => void; }) {
+function ItemsTable({
+  page, onPage, onSize, onDevolver,
+}: {
+  page: ItemsPage; onPage: (p: number) => void; onSize: (s: number) => void;
+  onDevolver: (item: ItemRow) => void;
+}) {
   const totalPages = Math.max(1, Math.ceil((page.total || 0) / (page.size || 10)));
   return (
     <div className="bg-white rounded-2xl shadow-sm border">
@@ -800,6 +780,7 @@ function ItemsTable({ page, onPage, onSize }: { page: ItemsPage; onPage: (p: num
               <th className="px-3 py-2 font-medium">Código</th>
               <th className="px-3 py-2 font-medium">Tipo</th>
               <th className="px-3 py-2 font-medium">Estado</th>
+              <th className="px-3 py-2 font-medium">Préstamo</th>
               <th className="px-3 py-2 font-medium">Registrado</th>
               <th className="px-3 py-2 font-medium">En equipo</th>
               <th className="px-3 py-2"></th>
@@ -811,15 +792,22 @@ function ItemsTable({ page, onPage, onSize }: { page: ItemsPage; onPage: (p: num
                 <td className="px-3 py-2 font-mono text-[13px]">{r.item_codigo}</td>
                 <td className="px-3 py-2">{r.tipo}</td>
                 <td className="px-3 py-2">{r.estado}</td>
+                <td className="px-3 py-2">{r.prestamo_text ?? "—"}</td>
                 <td className="px-3 py-2">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
                 <td className="px-3 py-2">{r.equipo ? `${r.equipo.equipo_codigo} · ${r.equipo.equipo_nombre}` : "-"}</td>
                 <td className="px-3 py-2 text-right">
-                  <Link to={`/items/${r.item_id}`} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm">Ver ficha</Link>
+                  <div className="flex items-center justify-end gap-2">
+                    <Link to={`/items/${r.item_id}`} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm">Ver ficha</Link>
+                    {/* Solo mostrar "Devolver" cuando el backend diga que puede */}
+                    {r.puede_devolver ? (
+                      <Button variant="subtle" onClick={() => onDevolver(r)}>Devolver</Button>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}
             {page.items.length === 0 && (
-              <tr><td colSpan={6}><EmptyState title="Sin registros" hint="Ajusta los filtros o crea un nuevo ítem." /></td></tr>
+              <tr><td colSpan={7}><EmptyState title="Sin registros" hint="Ajusta los filtros o crea un nuevo ítem." /></td></tr>
             )}
           </tbody>
         </table>

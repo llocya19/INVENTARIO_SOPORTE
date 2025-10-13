@@ -17,8 +17,8 @@ type TempItem = {
   codigo: string;
   schema: Attr[];
   specs: SpecKV[];
-  files?: FileList | null;   // seleccionadas desde galería/archivos
-  captured?: File[];         // fotos tomadas con cámara embebida
+  files?: FileList | null;
+  captured?: File[];
 };
 
 type EquipoHeaderAPI = {
@@ -35,24 +35,28 @@ type EquipoHeaderAPI = {
   items?: { item_id: number; item_codigo: string; clase: Clase; tipo: string; estado: string }[];
 };
 
+type AreaLite = { id: number; nombre: string };
+
+type AreaItemRow = {
+  item_id: number;
+  item_codigo: string;
+  clase: Clase;
+  tipo: string;
+  estado: string;
+  equipo?: { equipo_id: number; equipo_codigo: string; equipo_nombre: string } | null;
+};
+
 /* =========================
    Estilos reutilizables
 ========================= */
 const fieldBase =
-  "w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 md:px-3.5 md:py-2.5 " +
-  "text-sm md:text-base placeholder-slate-400 " +
-  "focus:outline-none focus:ring-2 focus:ring-slate-500/50 focus:border-slate-400 " +
-  "transition shadow-sm";
+  "w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 md:px-3.5 md:py-2.5 text-sm md:text-base placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/50 focus:border-slate-400 transition shadow-sm";
 const fieldReadOnly = fieldBase + " bg-slate-50 text-slate-700";
 const selectBase = fieldBase + " pr-8";
 const btnBase =
-  "inline-flex items-center justify-center rounded-2xl border border-slate-300 " +
-  "bg-white px-3 py-2 md:px-3.5 md:py-2.5 text-sm md:text-base " +
-  "hover:bg-slate-50 active:bg-slate-100 transition shadow-sm";
+  "inline-flex items-center justify-center rounded-2xl border border-slate-300 bg-white px-3 py-2 md:px-3.5 md:py-2.5 text-sm md:text-base hover:bg-slate-50 active:bg-slate-100 transition shadow-sm";
 const btnPrimary =
-  "inline-flex items-center justify-center rounded-2xl bg-slate-900 text-white " +
-  "px-4 py-2.5 md:px-5 md:py-3 text-sm md:text-base shadow-sm " +
-  "hover:opacity-95 active:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center rounded-2xl bg-slate-900 text-white px-4 py-2.5 md:px-5 md:py-3 text-sm md:text-base shadow-sm hover:opacity-95 active:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed";
 const card = "bg-white rounded-3xl shadow-sm ring-1 ring-slate-200";
 
 /* ============ UI: Sheet (drawer) ============ */
@@ -80,7 +84,7 @@ function Sheet({
       <div
         className={`
           fixed z-50 bg-white shadow-xl transition-transform duration-300
-          right-0 top-0 h-full w-full sm:w-[560px]
+          right-0 top-0 h-full w-full sm:w-[960px]
           ${open ? "translate-y-0 sm:translate-x-0" : "translate-y-full sm:translate-x-full"}
           sm:top-0 sm:h-full bottom-0 rounded-t-3xl sm:rounded-none
         `}
@@ -94,7 +98,7 @@ function Sheet({
               Cerrar
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 md:p-5">{children}</div>
+          <div className="flex-1 overflow-y-auto">{children}</div>
           {footer && <div className="px-4 md:px-5 py-3 md:py-4 border-t bg-slate-50">{footer}</div>}
         </div>
       </div>
@@ -127,16 +131,20 @@ export default function EquipoNuevoUso() {
 
   const [currentAreaId, setCurrentAreaId] = useState<number>(aidParam || 0);
   const [equipoHeader, setEquipoHeader] = useState<EquipoHeaderAPI | null>(null);
-  // eliminado yaAsignados (no se usaba)
 
   /* Catálogos */
   const [typesC, setTypesC] = useState<ItemType[]>([]);
   const [typesP, setTypesP] = useState<ItemType[]>([]);
 
-  /* --- Paso 2: Ítems temporales --- */
+  /* --- Paso 2: Ítems temporales nuevos --- */
   const [temp, setTemp] = useState<TempItem[]>([]);
   const [tPage, setTPage] = useState(1);
   const [tSize, setTSize] = useState(5);
+
+  /* --- Paso 2: Préstamos seleccionados --- */
+  const [prestamos, setPrestamos] = useState<
+    { item_id: number; item_codigo: string; clase: Clase; tipo: string; area_origen: number }[]
+  >([]);
 
   /* Sheet crear/editar ítem */
   const [open, setOpen] = useState(false);
@@ -150,6 +158,9 @@ export default function EquipoNuevoUso() {
   const [step, setStep] = useState<1 | 2 | 3>(isAppend ? 2 : 1);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // registrar movimientos como PRÉSTAMO para los ítems NUEVOS (opcional)
+  const [registrarPrestamoNuevos, setRegistrarPrestamoNuevos] = useState<boolean>(false);
 
   /* =========================
      Cargas iniciales
@@ -182,7 +193,6 @@ export default function EquipoNuevoUso() {
           login: h.login || "",
           password: h.password || "",
         });
-        // yaAsignados eliminado
         setStep(2);
       } catch (e: any) {
         setMsg(e?.response?.data?.error || "No se pudo cargar el equipo");
@@ -253,7 +263,7 @@ export default function EquipoNuevoUso() {
   }
 
   /* =========================
-     Sheet: abrir (nuevo / editar)
+     Sheet: crear/editar ítem NUEVO
   ========================= */
   async function openModal(clase: Clase, index: number | null = null) {
     setMsg(null);
@@ -287,7 +297,7 @@ export default function EquipoNuevoUso() {
     if (!draft) return;
     if (!draft.tipo_nombre) return setMsg("Selecciona el tipo");
     if (!draft.codigo.trim()) return setMsg("Completa el código");
-    const checked = validateSpecs(draft.specs, draft.schema);
+    const checked = validateSpecs(draft.specs, draft.schema) as Record<string, any> | string;
     if (typeof checked === "string") return setMsg(checked);
     if (editingIndex !== null) {
       setTemp((arr) => {
@@ -306,6 +316,80 @@ export default function EquipoNuevoUso() {
   }
 
   /* =========================
+     BORROW: Solicitar préstamos
+  ========================= */
+  const [borrowOpen, setBorrowOpen] = useState(false);
+  const [areas, setAreas] = useState<AreaLite[]>([]);
+  const [areasLoading, setAreasLoading] = useState(false);
+  const [areaSel, setAreaSel] = useState<number | null>(null);
+  const [borrowClase, setBorrowClase] = useState<Clase>("COMPONENTE");
+  const [areaItems, setAreaItems] = useState<AreaItemRow[]>([]);
+  const [areaItemsLoading, setAreaItemsLoading] = useState(false);
+  const [picked, setPicked] = useState<Record<number, boolean>>({}); // item_id -> checked
+
+  async function loadAreas() {
+    setAreasLoading(true);
+    try {
+      const r = await http.get<AreaLite[]>("/api/areas", { params: { flat: 1 } });
+      setAreas(r.data || []);
+    } catch {
+      setAreas([]);
+    } finally {
+      setAreasLoading(false);
+    }
+  }
+
+  async function loadAreaItems(id: number, clase: Clase) {
+    setAreaItemsLoading(true);
+    setAreaItems([]);
+    setPicked({});
+    try {
+      // Pedimos bastante por página para reducir llamadas; si necesitas más, implementa paginación aquí.
+      const r = await http.get<{ items: AreaItemRow[]; total: number; page: number; size: number }>(
+        `/api/areas/${id}/items`,
+        { params: { clase, page: 1, size: 100 } }
+      );
+      const rows = (r.data?.items || []).filter(
+        (x) => (x.estado || "").toUpperCase() === "ALMACEN" && !x.equipo
+      );
+      setAreaItems(rows);
+    } catch {
+      setAreaItems([]);
+    } finally {
+      setAreaItemsLoading(false);
+    }
+  }
+
+  function openBorrow() {
+    setBorrowOpen(true);
+    if (areas.length === 0) loadAreas();
+  }
+
+  function togglePick(id: number) {
+    setPicked((m) => ({ ...m, [id]: !m[id] }));
+  }
+
+  function confirmBorrowSelection() {
+    const rows = areaItems.filter((x) => picked[x.item_id]);
+    if (rows.length === 0) return;
+    const adds = rows.map((r) => ({
+      item_id: r.item_id,
+      item_codigo: r.item_codigo,
+      clase: r.clase,
+      tipo: r.tipo,
+      area_origen: areaSel as number,
+    }));
+    // no duplicar si ya está seleccionado
+    setPrestamos((prev) => {
+      const ids = new Set(prev.map((p) => p.item_id));
+      const merged = [...prev];
+      for (const a of adds) if (!ids.has(a.item_id)) merged.push(a);
+      return merged;
+    });
+    setBorrowOpen(false);
+  }
+
+  /* =========================
      Guardar
   ========================= */
   async function guardarEquipo() {
@@ -316,8 +400,8 @@ export default function EquipoNuevoUso() {
       setStep(1);
       return;
     }
-    if (temp.length === 0) {
-      setMsg("Agrega al menos un componente o periférico");
+    if (temp.length === 0 && prestamos.length === 0) {
+      setMsg("Agrega ítems nuevos o selecciona préstamos");
       setStep(2);
       return;
     }
@@ -326,7 +410,7 @@ export default function EquipoNuevoUso() {
     try {
       let equipo_id = eidParam;
 
-      // Crear equipo primero (solo modo crear)
+      // 1) Crear equipo (solo modo crear)
       if (!isAppend) {
         const payload = {
           codigo: form.codigo.trim(),
@@ -337,11 +421,9 @@ export default function EquipoNuevoUso() {
           password: form.password?.trim() || null,
           items: [],
         };
-
         async function postOnce(p: typeof payload) {
           return http.post<{ equipo_id: number }>(`/api/areas/${currentAreaId}/equipos`, p);
         }
-
         try {
           const creq = await postOnce(payload);
           equipo_id = creq.data.equipo_id;
@@ -349,36 +431,28 @@ export default function EquipoNuevoUso() {
           const txt = e?.response?.data?.error || "";
           const isDup = /duplicad.|llave duplicada|duplicate/i.test(txt);
           if (isDup) {
-            try {
-              const sug = await http.get<{ next_code: string }>(
-                `/api/areas/${currentAreaId}/equipos/next-code`,
-                { params: { prefix: "PC-", pad: 3 } }
-              );
-              const next_code = sug.data?.next_code;
-              if (next_code) {
-                const creq2 = await postOnce({ ...payload, codigo: next_code });
-                equipo_id = creq2.data.equipo_id;
-              } else {
-                throw new Error("No se pudo sugerir un código nuevo");
-              }
-            } catch {
-              throw e;
-            }
+            const sug = await http.get<{ next_code: string }>(
+              `/api/areas/${currentAreaId}/equipos/next-code`,
+              { params: { prefix: "PC-", pad: 3 } }
+            );
+            const next_code = sug.data?.next_code;
+            if (!next_code) throw e;
+            const creq2 = await postOnce({ ...payload, codigo: next_code });
+            equipo_id = creq2.data.equipo_id;
           } else {
             throw e;
           }
         }
       }
 
-      // Crear ítems + media + asignar
+      // 2) Ítems NUEVOS: crear + media + asignar (+ opcional prestar movimiento)
       for (const row of temp) {
         const specsObj = validateSpecs(row.specs, row.schema) as Record<string, any>;
-
         const ir = await http.post<{ item_id: number }>("/api/items", {
           codigo: row.codigo.trim(),
           clase: row.clase,
           tipo_nombre: row.tipo_nombre,
-          area_id: currentAreaId,
+          area_id: currentAreaId, // se crea en el área del equipo
           specs: specsObj,
         });
         const item_id = ir.data.item_id;
@@ -386,7 +460,6 @@ export default function EquipoNuevoUso() {
         const captured = row.captured || [];
         const selected = row.files ? Array.from(row.files) : [];
         const blobs: File[] = [...selected, ...captured];
-
         if (blobs.length > 0) {
           const fd = new FormData();
           blobs.forEach((f) => fd.append("files", f));
@@ -394,11 +467,40 @@ export default function EquipoNuevoUso() {
         }
 
         await http.post(`/api/equipos/${equipo_id}/items`, { item_id, slot: null });
+
+        if (registrarPrestamoNuevos) {
+          try {
+            await http.post(`/api/items/${item_id}/prestar`, {
+              destino_area_id: currentAreaId,
+              detalle: { equipo_id, motivo: "CREACION_EQUIPO_USO" }
+            });
+          } catch {
+            // no bloquear por un préstamo decorativo
+          }
+        }
       }
 
+      // 3) Ítems en PRÉSTAMO: prestar + asignar
+      for (const p of prestamos) {
+        try {
+          await http.post(`/api/items/${p.item_id}/prestar`, {
+            destino_area_id: currentAreaId,
+            detalle: { equipo_id, motivo: "PRESTAMO_A_EQUIPO_USO", desde_area_id: p.area_origen }
+          });
+        } catch (e: any) {
+          // si ya estaban prestados o similar, continuamos e intentamos asignar
+        }
+        const assignRes = await http.post(`/api/equipos/${equipo_id}/items`, { item_id: p.item_id, slot: null }).catch((e) => e);
+        if (assignRes?.response?.status === 400) {
+          // Si el backend rechaza por área distinta, mostramos un mensaje claro.
+          throw new Error(assignRes.response?.data?.error || "No se pudo asignar un préstamo al equipo");
+        }
+      }
+
+      // 4) Ir al detalle
       nav(`/equipos/${equipo_id}`);
     } catch (e: any) {
-      setMsg(e?.response?.data?.error || "No se pudo completar la operación");
+      setMsg(e?.response?.data?.error || e?.message || "No se pudo completar la operación");
     } finally {
       setSaving(false);
     }
@@ -511,7 +613,20 @@ export default function EquipoNuevoUso() {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <input
+                id="chPrestamoNuevos"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={registrarPrestamoNuevos}
+                onChange={(e) => setRegistrarPrestamoNuevos(e.target.checked)}
+              />
+              <label htmlFor="chPrestamoNuevos" className="text-sm text-slate-700">
+                Registrar movimientos como <b>PRÉSTAMO</b> para ítems nuevos
+              </label>
+            </div>
+
             <button
               className={btnPrimary}
               onClick={() => setStep(2)}
@@ -540,96 +655,118 @@ export default function EquipoNuevoUso() {
         <section className={card + " p-4 md:p-5 space-y-4"}>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-base md:text-lg font-semibold">
-              2) {isAppend ? "Crear y asignar nuevos ítems en USO" : "Agrega componentes y periféricos"}
+              2) Ítems para el equipo
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <button className={btnBase + " w-full sm:w-auto"} onClick={() => openModal("COMPONENTE")}>
-                + Componente
+                + Componente nuevo
               </button>
               <button className={btnBase + " w-full sm:w-auto"} onClick={() => openModal("PERIFERICO")}>
-                + Periférico
+                + Periférico nuevo
+              </button>
+              <button className={btnBase + " w-full sm:w-auto"} onClick={openBorrow}>
+                🔄 Solicitar préstamos
               </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 sticky top-0 z-10">
-                <tr className="text-left text-slate-600">
-                  <th className="px-3 py-2">Clase</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Ficha</th>
-                  <th className="px-3 py-2">Imágenes</th>
-                  <th className="px-3 py-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tempSlice.map((r, i) => {
-                  const idx = (tPage - 1) * tSize + i;
-                  const imgCount = (r.files?.length || 0) + (r.captured?.length || 0);
-                  return (
-                    <tr key={`tmp-${idx}`} className={`border-t hover:bg-slate-50 ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
-                      <td className="px-3 py-2">{r.clase}</td>
-                      <td className="px-3 py-2">{r.tipo_nombre || "-"}</td>
-                      <td className="px-3 py-2">{r.codigo}</td>
-                      <td className="px-3 py-2">
-                        {r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}
-                      </td>
-                      <td className="px-3 py-2">{imgCount}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-2">
-                          <button className={btnBase} onClick={() => openModal(r.clase, idx)}>Editar</button>
-                          <button className={btnBase} onClick={() => removeTemp(idx)}>Quitar</button>
-                        </div>
+          {/* NUEVOS EN USO */}
+          <div className="rounded-2xl ring-1 ring-slate-200 overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b text-sm font-medium">Nuevos ítems en uso</div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr className="text-left text-slate-600">
+                    <th className="px-3 py-2">Clase</th>
+                    <th className="px-3 py-2">Tipo</th>
+                    <th className="px-3 py-2">Código</th>
+                    <th className="px-3 py-2">Ficha</th>
+                    <th className="px-3 py-2">Imágenes</th>
+                    <th className="px-3 py-2 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tempSlice.map((r, i) => {
+                    const idx = (tPage - 1) * tSize + i;
+                    const imgCount = (r.files?.length || 0) + (r.captured?.length || 0);
+                    return (
+                      <tr key={`tmp-${idx}`} className={`border-t hover:bg-slate-50 ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
+                        <td className="px-3 py-2">{r.clase}</td>
+                        <td className="px-3 py-2">{r.tipo_nombre || "-"}</td>
+                        <td className="px-3 py-2">{r.codigo}</td>
+                        <td className="px-3 py-2">
+                          {r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}
+                        </td>
+                        <td className="px-3 py-2">{imgCount}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-2">
+                            <button className={btnBase} onClick={() => openModal(r.clase, idx)}>Editar</button>
+                            <button className={btnBase} onClick={() => removeTemp(idx)}>Quitar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {temp.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-6 text-slate-500" colSpan={6}>
+                        Aún no agregas ítems nuevos
                       </td>
                     </tr>
-                  );
-                })}
-                {temp.length === 0 && (
-                  <tr>
-                    <td className="px-3 py-6 text-slate-500" colSpan={6}>
-                      Aún no agregas ítems
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between p-3 border-t">
+              <div className="text-sm text-slate-600">
+                Página {Math.min(tPage, totalTPages)} de {totalTPages} · {temp.length} ítems
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button className={btnBase + " flex-1 sm:flex-none"} disabled={tPage <= 1} onClick={() => setTPage((p) => p - 1)}>◀</button>
+                <select className={selectBase + " w-full sm:w-auto py-1.5"} value={tSize} onChange={(e) => { setTPage(1); setTSize(Number(e.target.value)); }}>
+                  {[5, 10, 20, 50].map((s) => <option key={s} value={s}>{s} / pág</option>)}
+                </select>
+                <button className={btnBase + " flex-1 sm:flex-none"} disabled={tPage >= totalTPages} onClick={() => setTPage((p) => p + 1)}>▶</button>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-sm text-slate-600">
-              Página {Math.min(tPage, totalTPages)} de {totalTPages} · {temp.length} ítems
+          {/* PRÉSTAMOS SELECCIONADOS */}
+          <div className="rounded-2xl ring-1 ring-slate-200 overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b text-sm font-medium">
+              Préstamos seleccionados <span className="text-slate-500">({prestamos.length})</span>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                className={btnBase + " flex-1 sm:flex-none"}
-                disabled={tPage <= 1}
-                onClick={() => setTPage((p) => p - 1)}
-              >
-                ◀
-              </button>
-              <select
-                className={selectBase + " w-full sm:w-auto py-1.5"}
-                value={tSize}
-                onChange={(e) => {
-                  setTPage(1);
-                  setTSize(Number(e.target.value));
-                }}
-              >
-                {[5, 10, 20, 50].map((s) => (
-                  <option key={s} value={s}>
-                    {s} / pág
-                  </option>
-                ))}
-              </select>
-              <button
-                className={btnBase + " flex-1 sm:flex-none"}
-                disabled={tPage >= totalTPages}
-                onClick={() => setTPage((p) => p + 1)}
-              >
-                ▶
-              </button>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-slate-600">
+                    <th className="px-3 py-2">Clase</th>
+                    <th className="px-3 py-2">Tipo</th>
+                    <th className="px-3 py-2">Código</th>
+                    <th className="px-3 py-2">Área origen</th>
+                    <th className="px-3 py-2 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prestamos.map((p, i) => (
+                    <tr key={`pre-${p.item_id}`} className={`border-t ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
+                      <td className="px-3 py-2">{p.clase}</td>
+                      <td className="px-3 py-2">{p.tipo}</td>
+                      <td className="px-3 py-2 font-mono">{p.item_codigo}</td>
+                      <td className="px-3 py-2">{p.area_origen}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button className={btnBase} onClick={() => setPrestamos((arr) => arr.filter((x) => x.item_id !== p.item_id))}>
+                          Quitar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {prestamos.length === 0 && (
+                    <tr><td className="px-3 py-6 text-slate-500" colSpan={5}>No has seleccionado préstamos aún</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -646,7 +783,7 @@ export default function EquipoNuevoUso() {
             <button
               className={btnPrimary}
               onClick={() => setStep(3)}
-              disabled={temp.length === 0}
+              disabled={temp.length === 0 && prestamos.length === 0}
             >
               Continuar
             </button>
@@ -668,49 +805,29 @@ export default function EquipoNuevoUso() {
                 <div><span className="text-slate-500">Estado:</span> USO</div>
                 {form.usuario_final && (<div><span className="text-slate-500">Usuario final:</span> {form.usuario_final}</div>)}
                 {form.login && (<div><span className="text-slate-500">Login:</span> {form.login}</div>)}
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    id="chPrestamoRev"
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={registrarPrestamoNuevos}
+                    onChange={(e) => setRegistrarPrestamoNuevos(e.target.checked)}
+                  />
+                  <label htmlFor="chPrestamoRev" className="text-sm text-slate-700">
+                    Registrar movimientos como <b>PRÉSTAMO</b> para ítems nuevos
+                  </label>
+                </div>
               </div>
             </div>
             <div className="rounded-2xl ring-1 ring-slate-200 p-3 md:p-4">
-              <div className="font-medium mb-2">Resumen ítems</div>
+              <div className="font-medium mb-2">Resumen</div>
               <div className="text-sm space-y-1.5">
-                <div>Total: {temp.length}</div>
-                <div>Componentes: {temp.filter((t) => t.clase === "COMPONENTE").length}</div>
-                <div>Periféricos: {temp.filter((t) => t.clase === "PERIFERICO").length}</div>
+                <div>Nuevos: {temp.length}</div>
+                <div>Préstamos: {prestamos.length}</div>
+                <div>Componentes: {temp.filter((t) => t.clase === "COMPONENTE").length + prestamos.filter((t) => t.clase === "COMPONENTE").length}</div>
+                <div>Periféricos: {temp.filter((t) => t.clase === "PERIFERICO").length + prestamos.filter((t) => t.clase === "PERIFERICO").length}</div>
               </div>
             </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 sticky top-0 z-10">
-                <tr className="text-left text-slate-600">
-                  <th className="px-3 py-2">Clase</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2"># Atributos</th>
-                  <th className="px-3 py-2">Imágenes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {temp.map((r, i) => {
-                  const imgCount = (r.files?.length || 0) + (r.captured?.length || 0);
-                  return (
-                    <tr key={`rev-${i}`} className={`border-t ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
-                      <td className="px-3 py-2">{r.clase}</td>
-                      <td className="px-3 py-2">{r.tipo_nombre}</td>
-                      <td className="px-3 py-2">{r.codigo}</td>
-                      <td className="px-3 py-2">{r.specs.filter((s) => (s.v ?? "") !== "").length}/{r.schema.length}</td>
-                      <td className="px-3 py-2">{imgCount}</td>
-                    </tr>
-                  );
-                })}
-                {temp.length === 0 && (
-                  <tr>
-                    <td className="px-3 py-6 text-slate-500" colSpan={5}>Sin ítems</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
           </div>
 
           <div className="flex flex-col sm:flex-row justify-between gap-2">
@@ -728,7 +845,7 @@ export default function EquipoNuevoUso() {
         </section>
       )}
 
-      {/* Sheet crear/editar ítem */}
+      {/* Sheet crear/editar ítem NUEVO */}
       <Sheet
         open={open}
         onClose={() => setOpen(false)}
@@ -745,7 +862,7 @@ export default function EquipoNuevoUso() {
         }
       >
         {draft && (
-          <div className="space-y-3">
+          <div className="p-4 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs md:text-sm text-slate-600 block mb-1">Clase</label>
@@ -753,16 +870,10 @@ export default function EquipoNuevoUso() {
               </div>
               <div>
                 <label className="text-xs md:text-sm text-slate-600 block mb-1">Tipo</label>
-                <select
-                  className={selectBase}
-                  value={draft.tipo_nombre}
-                  onChange={(e) => onChangeTipo(e.target.value)}
-                >
+                <select className={selectBase} value={draft.tipo_nombre} onChange={(e) => onChangeTipo(e.target.value)}>
                   <option value="">Seleccione…</option>
                   {(draft.clase === "COMPONENTE" ? typesC : typesP).map((t) => (
-                    <option key={t.id} value={t.nombre}>
-                      {t.nombre}
-                    </option>
+                    <option key={t.id} value={t.nombre}>{t.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -779,7 +890,7 @@ export default function EquipoNuevoUso() {
               </div>
             </div>
 
-            {/* Imágenes: solo Subir/Cámara + Tomar foto */}
+            {/* Imágenes */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs md:text-sm text-slate-600">Imágenes</label>
@@ -796,18 +907,13 @@ export default function EquipoNuevoUso() {
                       title="Abrirá cámara en móvil o galería/archivos"
                     />
                   </label>
-                  <button
-                    type="button"
-                    className={btnBase + " text-sm"}
-                    onClick={() => setShowCam(true)}
-                  >
+                  <button type="button" className={btnBase + " text-sm"} onClick={() => setShowCam(true)}>
                     📷 Tomar foto
                   </button>
                 </div>
               </div>
               <div className="text-xs text-slate-600">
-                Listas para subir:{" "}
-                <span className="font-semibold">
+                Listas para subir: <span className="font-semibold">
                   {(draft.files?.length || 0) + (draft.captured?.length || 0)}
                 </span>{" "}
                 {draft.files?.length ? `(seleccionadas: ${draft.files.length}) ` : ""}
@@ -890,7 +996,120 @@ export default function EquipoNuevoUso() {
         )}
       </Sheet>
 
-      {/* Cámara embebida para el Sheet */}
+      {/* Sheet: PRÉSTAMOS */}
+      <Sheet
+        open={borrowOpen}
+        onClose={() => setBorrowOpen(false)}
+        title="Solicitar préstamos"
+        footer={
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-slate-600">
+              Seleccionados: {Object.values(picked).filter(Boolean).length}
+            </div>
+            <div className="flex items-center gap-2">
+              <button className={btnBase} onClick={() => setBorrowOpen(false)}>Cancelar</button>
+              <button className={btnPrimary} onClick={confirmBorrowSelection} disabled={Object.values(picked).every((v) => !v)}>
+                Agregar a préstamos
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 h-full">
+          {/* Col 1: Áreas */}
+          <div className="border-r md:h-[calc(100vh-10rem)] overflow-y-auto p-3">
+            <div className="text-sm font-medium mb-2">Áreas</div>
+            {areasLoading && <div className="text-sm text-slate-500">Cargando áreas…</div>}
+            {!areasLoading && areas.length === 0 && <div className="text-sm text-slate-500">No hay áreas</div>}
+            <div className="space-y-1">
+              {areas.map((a) => (
+                <button
+                  key={a.id}
+                  className={`w-full text-left px-3 py-2 rounded-xl border ${
+                    areaSel === a.id ? "bg-slate-900 text-white border-slate-900" : "bg-white hover:bg-slate-50 border-slate-300"
+                  }`}
+                  onClick={() => {
+                    setAreaSel(a.id);
+                    loadAreaItems(a.id, borrowClase);
+                  }}
+                >
+                  <div className="text-sm">{a.nombre}</div>
+                  <div className="text-xs opacity-70">ID: {a.id}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Col 2-3: Ítems */}
+          <div className="md:col-span-2 p-3 md:h-[calc(100vh-10rem)] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <button
+                  className={`${btnBase} ${borrowClase === "COMPONENTE" ? "bg-slate-900 text-white border-slate-900" : ""}`}
+                  onClick={() => {
+                    setBorrowClase("COMPONENTE");
+                    if (areaSel) loadAreaItems(areaSel, "COMPONENTE");
+                  }}
+                >
+                  Componentes
+                </button>
+                <button
+                  className={`${btnBase} ${borrowClase === "PERIFERICO" ? "bg-slate-900 text-white border-slate-900" : ""}`}
+                  onClick={() => {
+                    setBorrowClase("PERIFERICO");
+                    if (areaSel) loadAreaItems(areaSel, "PERIFERICO");
+                  }}
+                >
+                  Periféricos
+                </button>
+              </div>
+              <div className="text-sm text-slate-600">
+                {areaSel ? `Área ID ${areaSel}` : "Selecciona un área"}
+              </div>
+            </div>
+
+            {!areaSel && <div className="text-sm text-slate-500">Elige un área para ver los ítems disponibles</div>}
+            {areaSel && areaItemsLoading && <div className="text-sm text-slate-500">Cargando ítems libres…</div>}
+            {areaSel && !areaItemsLoading && areaItems.length === 0 && (
+              <div className="text-sm text-slate-500">No hay ítems libres en ALMACEN para esta clase</div>
+            )}
+
+            {areaSel && !areaItemsLoading && areaItems.length > 0 && (
+              <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="text-left text-slate-600">
+                      <th className="px-3 py-2 w-10"></th>
+                      <th className="px-3 py-2">Código</th>
+                      <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {areaItems.map((r, i) => (
+                      <tr key={r.item_id} className={`border-t ${i % 2 ? "bg-slate-50/40" : "bg-white"}`}>
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={!!picked[r.item_id]}
+                            onChange={() => togglePick(r.item_id)}
+                          />
+                        </td>
+                        <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
+                        <td className="px-3 py-2">{r.tipo}</td>
+                        <td className="px-3 py-2">{r.estado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </Sheet>
+
+      {/* Cámara embebida para el Sheet NUEVOS */}
       {showCam && draft && (
         <CamSheet
           onClose={() => setShowCam(false)}
@@ -910,57 +1129,46 @@ export default function EquipoNuevoUso() {
 /* ======= Cámara embebida (getUserMedia) SIN PARPADEO ======= */
 function CamSheet({ onClose, onCapture }: { onClose: () => void; onCapture: (f: File) => void }) {
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  // usamos un ref global por componente para no re-renderizar por el stream
+  // ref global para no re-crear stream
   const streamRef = (window as any).__equiponuevo_stream_ref ?? { current: null as MediaStream | null };
   (window as any).__equiponuevo_stream_ref = streamRef;
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         if (!streamRef.current) {
-          const s = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "environment" } },
-            audio: false,
-          });
+          const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
           if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
           streamRef.current = s;
         }
-
         const v = videoEl;
         if (v && v.srcObject !== streamRef.current) {
           (v as any).srcObject = streamRef.current;
-          try { await v.play(); } catch {}
+          try { await (v as any).play?.(); } catch {}
           setReady(true);
         }
-      } catch {
-        onClose();
-      }
+      } catch { onClose(); }
     })();
-
     return () => {
       cancelled = true;
       const s = streamRef.current;
       streamRef.current = null;
       s?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
     };
-    // deps intencionalmente mínimas para evitar re-llamadas
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoEl]);
 
   async function capture() {
     if (!videoEl) return;
-    const w = videoEl.videoWidth || 1280;
-    const h = videoEl.videoHeight || 720;
+    const w = (videoEl as any).videoWidth || 1280;
+    const h = (videoEl as any).videoHeight || 720;
     const canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(videoEl, 0, 0, w, h);
-    const blob: Blob = await new Promise((res) =>
-      canvas.toBlob((b) => res(b as Blob), "image/jpeg", 0.8)!
-    );
+    const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b as Blob), "image/jpeg", 0.8)!);
     const file = new File([blob], `cam_${Date.now()}.jpg`, { type: "image/jpeg" });
     onCapture(file);
   }
@@ -970,22 +1178,11 @@ function CamSheet({ onClose, onCapture }: { onClose: () => void; onCapture: (f: 
       <div className="bg-white rounded-2xl shadow w-full max-w-md overflow-hidden">
         <div className="px-4 py-3 border-b font-semibold">Cámara</div>
         <div className="p-3">
-          <video
-            ref={setVideoEl}
-            autoPlay
-            playsInline
-            muted
-            className="w-full rounded-lg bg-black"
-            style={{ aspectRatio: "16/9", objectFit: "cover" }}
-          />
+          <video ref={setVideoEl} autoPlay playsInline muted className="w-full rounded-lg bg-black" style={{ aspectRatio: "16/9", objectFit: "cover" }} />
         </div>
         <div className="px-4 py-3 border-t flex items-center justify-between">
           <button className="px-3 py-2 rounded-lg border" onClick={onClose}>Cerrar</button>
-          <button
-            className="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50"
-            disabled={!ready}
-            onClick={capture}
-          >
+          <button className="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50" disabled={!ready} onClick={capture}>
             Tomar foto
           </button>
         </div>

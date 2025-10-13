@@ -34,9 +34,6 @@ def get_area_items(area_id: int):
     )
     return jsonify(data)
 
-# ⚠️ IMPORTANTE: eliminamos el endpoint duplicado de equipos aquí
-# @bp.get("/<int:area_id>/equipos")  ← eliminado
-
 @bp.get("/<int:area_id>/info")
 @require_auth
 def area_info(area_id: int):

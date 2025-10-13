@@ -1,11 +1,12 @@
 # app/routes/items_routes.py
-from flask import Blueprint, request, jsonify
-from app.core.security import require_auth, require_admin, require_roles
+import os
+from flask import Blueprint, request, jsonify, current_app
+from app.core.security import require_auth, require_roles
 from app.models.item_model import (
     list_item_types, create_item_type, create_item_with_specs, get_item_detail,
-    upsert_attribute_and_value, add_photo, suggest_next_code
+    upsert_attribute_and_value, add_photo, suggest_next_code, remove_photo
 )
-from app.models.area_model import get_area_info  # por si quieres validar que exista
+from app.models.area_model import get_area_info
 
 bp = Blueprint("items", __name__, url_prefix="/api")
 
@@ -46,7 +47,6 @@ def create_item():
     if not codigo or not clase or not tipo or not area_id:
         return {"error": "Datos requeridos: codigo, clase, tipo_nombre, area_id"}, 400
 
-    # Validación opcional de existencia del área (incluye subáreas)
     info = get_area_info(request.claims["username"], int(area_id))
     if not info:
         return {"error": "Área no encontrada"}, 404
@@ -93,7 +93,7 @@ def item_upsert_spec(item_id: int):
     return {"ok": True}
 
 # =========================
-# Fotos
+# Fotos (atajos REST extras)
 # =========================
 @bp.post("/items/<int:item_id>/photos")
 @require_auth
@@ -108,6 +108,41 @@ def item_add_photo(item_id: int):
     err = add_photo(request.claims["username"], item_id, url, principal, orden)
     if err:
         return {"error": err}, 400
+    return {"ok": True}
+
+# Delete de media (llamado por el botón "Eliminar" del front)
+@bp.delete("/items/<int:item_id>/media")
+@require_auth
+@require_roles(["ADMIN", "PRACTICANTE"])
+def delete_media(item_id: int):
+    """
+    JSON: { "path": "/uploads/items/<item_id>/<file>" }  (acepta también "url")
+    """
+    d = request.get_json(force=True) or {}
+    path = (d.get("path") or d.get("url") or "").strip()
+    if not path:
+        return {"error": "path/url requerido"}, 400
+
+    # Normaliza: si vino relativo, fuerza dentro del item
+    if not path.startswith("/uploads/"):
+        if "/" not in path:
+            path = f"/uploads/items/{item_id}/{path}"
+        else:
+            return {"error": "ruta no permitida"}, 400
+
+    # 1) BD
+    err = remove_photo(request.claims["username"], item_id, path)
+    if err:
+        return {"error": err}, 400
+
+    # 2) Archivo físico (best-effort)
+    base = current_app.instance_path
+    abs_path = os.path.join(base, "uploads", "items", str(item_id), os.path.basename(path))
+    try:
+        os.remove(abs_path)
+    except FileNotFoundError:
+        pass
+
     return {"ok": True}
 
 # =========================

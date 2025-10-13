@@ -1,10 +1,10 @@
-# backend/app/models/equipo_model.py
 from typing import List, Dict, Any, Optional, Tuple
+from json import dumps
 from app.db import get_conn
 
-# ---------------------------------------------------
-# Listado simple (compatibilidad)
-# ---------------------------------------------------
+# ============================================================
+# LISTADOS DE EQUIPOS (compatibilidad + paginado)
+# ============================================================
 def list_area_equipos(app_user: str, area_id: int) -> List[Dict[str, Any]]:
     SQL = """
     SELECT
@@ -36,9 +36,6 @@ def list_area_equipos(app_user: str, area_id: int) -> List[Dict[str, Any]]:
     return out
 
 
-# ---------------------------------------------------
-# Listado con filtros y paginación
-# ---------------------------------------------------
 def list_area_equipos_paged(
     app_user: str,
     area_id: int,
@@ -105,9 +102,9 @@ def list_area_equipos_paged(
     return {"items": items, "total": int(total or 0), "page": p, "size": s}
 
 
-# ---------------------------------------------------
-# Detalle
-# ---------------------------------------------------
+# ============================================================
+# DETALLE DE EQUIPO
+# ============================================================
 def get_equipo_header(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]]:
     SQL = """
       SELECT
@@ -172,9 +169,9 @@ def get_equipo_detalle(app_user: str, equipo_id: int) -> Optional[Dict[str, Any]
     return header
 
 
-# ---------------------------------------------------
-# Ítems disponibles (para "desde almacén")
-# ---------------------------------------------------
+# ============================================================
+# ÍTEMS DISPONIBLES (ALMACÉN)
+# ============================================================
 def list_items_disponibles(
     app_user: str,
     area_id: int,
@@ -238,9 +235,9 @@ def list_items_disponibles(
     return {"items": items, "total": int(total or 0), "page": p, "size": s}
 
 
-# ---------------------------------------------------
-# Crear equipo (con items preexistentes opcional)
-# ---------------------------------------------------
+# ============================================================
+# CREAR EQUIPO (con items opcionales)
+# ============================================================
 def create_equipo_con_items(
     app_user: str,
     area_id: int,
@@ -253,7 +250,6 @@ def create_equipo_con_items(
     items: List[Dict[str, Any]],
 ) -> Tuple[Optional[int], Optional[str]]:
     with get_conn(app_user) as (conn, cur):
-        # Contexto para mov_motivo
         cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.create_con_items',))
         try:
             cur.execute("""
@@ -282,7 +278,7 @@ def create_equipo_con_items(
             if r[1] != "ALMACEN":
                 return None, f"Item {item_id} no está en ALMACEN (actual={r[1]})"
 
-            # ¿Existe SP?
+            # Si existe SP, úsalo. Si no, maneja aquí.
             try:
                 cur.execute("""
                   SELECT 1
@@ -316,75 +312,189 @@ def create_equipo_con_items(
         return equipo_id, None
 
 
-# ---------------------------------------------------
-# Asignar item a equipo (para /api/equipos/<id>/items)
-# ---------------------------------------------------
+# ============================================================
+# HELPERS DE PRÉSTAMOS
+# ============================================================
+def _get_active_loan(cur, item_id: int):
+    """
+    Devuelve (origen_area_id, destino_area_id, mov_id) del último TRASLADO
+    cuyo mov_detalle->>'es_prestamo' = 'true'. None si no hay préstamo activo.
+    """
+    cur.execute("""
+        SELECT m.mov_id, m.mov_origen_area_id, m.mov_destino_area_id,
+               COALESCE((m.mov_detalle->>'es_prestamo')::boolean, false) AS es_prestamo
+        FROM inv.movimientos m
+        WHERE m.mov_item_id = %s AND m.mov_tipo = 'TRASLADO'
+        ORDER BY m.mov_id DESC
+        LIMIT 1
+    """, (item_id,))
+    r = cur.fetchone()
+    if not r:
+        return None
+    mov_id, org, dst, es_prestamo = int(r[0]), r[1], r[2], bool(r[3])
+    if es_prestamo:
+        return (int(org) if org is not None else None,
+                int(dst) if dst is not None else None,
+                mov_id)
+    return None
+
+
+# ============================================================
+# LISTADO “BI-VISTA” DE ÍTEMS POR ÁREA (origen/destino)
+# ============================================================
+def list_area_items_biview(
+    app_user: str,
+    area_id: int,
+    clase: Optional[str] = None,
+    page: int = 1,
+    size: int = 10,
+) -> Dict[str, Any]:
+    p = max(1, int(page or 1))
+    s = min(200, max(1, int(size or 10)))
+    off = (p - 1) * s
+
+    SQL = """
+    WITH last_tr AS (
+       SELECT DISTINCT ON (m.mov_item_id)
+              m.mov_item_id,
+              m.mov_origen_area_id,
+              m.mov_destino_area_id,
+              COALESCE((m.mov_detalle->>'es_prestamo')::boolean, false) as es_prestamo
+       FROM inv.movimientos m
+       WHERE m.mov_tipo='TRASLADO'
+       ORDER BY m.mov_item_id, m.mov_id DESC
+    ),
+    base AS (
+      SELECT
+        i.item_id,
+        i.item_codigo,
+        it.clase,
+        it.nombre AS tipo,
+        i.estado,
+        i.area_id     AS dueno_area_id,
+        l.mov_origen_area_id AS loan_origen_area_id,
+        l.mov_destino_area_id AS loan_destino_area_id,
+        l.es_prestamo,
+        ei.equipo_id,
+        e.equipo_codigo,
+        e.equipo_nombre
+      FROM inv.items i
+      JOIN inv.item_tipos it ON it.item_tipo_id = i.item_tipo_id
+      LEFT JOIN last_tr l     ON l.mov_item_id = i.item_id
+      LEFT JOIN inv.equipo_items ei ON ei.item_id = i.item_id
+      LEFT JOIN inv.equipos e       ON e.equipo_id = ei.equipo_id
+      WHERE (%(by_clase)s IS NULL OR it.clase = %(by_clase)s)
+    ),
+    view_origin AS (
+      SELECT b.*, b.dueno_area_id AS vista_area_id, b.loan_destino_area_id AS otra_area_id, 'ORIGEN'::text AS vista
+      FROM base b
+      WHERE b.dueno_area_id = %(area_id)s
+    ),
+    view_dest AS (
+      SELECT b.*, %(area_id)s AS vista_area_id, b.loan_origen_area_id AS otra_area_id, 'DESTINO'::text AS vista
+      FROM base b
+      WHERE b.es_prestamo IS TRUE AND b.loan_destino_area_id = %(area_id)s
+            AND (b.dueno_area_id IS NULL OR b.dueno_area_id <> %(area_id)s)
+    ),
+    unioned AS ( SELECT * FROM view_origin UNION ALL SELECT * FROM view_dest )
+    SELECT
+      u.item_id, u.item_codigo, u.clase, u.tipo, u.estado, u.vista,
+      u.dueno_area_id, u.loan_origen_area_id, u.loan_destino_area_id, u.es_prestamo,
+      u.equipo_id, u.equipo_codigo, u.equipo_nombre,
+      ao.area_nombre AS origen_area_nombre,
+      ad.area_nombre AS destino_area_nombre,
+      COUNT(*) OVER() AS total_rows
+    FROM unioned u
+    LEFT JOIN inv.areas ao ON ao.area_id = u.loan_origen_area_id
+    LEFT JOIN inv.areas ad ON ad.area_id = u.loan_destino_area_id
+    ORDER BY lower(u.tipo), lower(u.item_codigo)
+    LIMIT %(limit)s OFFSET %(offset)s
+    """
+    params = {
+        "area_id": area_id,
+        "by_clase": clase if clase in ("COMPONENTE", "PERIFERICO") else None,
+        "limit": s,
+        "offset": off,
+    }
+    with get_conn(app_user) as (conn, cur):
+        cur.execute(SQL, params)
+        rows = cur.fetchall()
+
+    total = 0
+    out = []
+    for r in rows:
+        total = r[15]
+        vista = r[5]  # 'ORIGEN' | 'DESTINO'
+        estado = (r[4] or "").upper()
+        es_prestamo = bool(r[9])
+        loan_origen = r[7]
+        loan_dest   = r[8]
+        origen_nom  = r[13]
+        destino_nom = r[14]
+
+        if vista == "ORIGEN" and es_prestamo and loan_dest and loan_dest != r[6]:
+            view_estado = "EN_USO_PRESTADO"
+        elif vista == "DESTINO" and es_prestamo and loan_dest == area_id:
+            view_estado = "PRESTAMO"
+        else:
+            view_estado = estado
+
+        out.append({
+            "item_id": r[0],
+            "item_codigo": r[1],
+            "clase": r[2],
+            "tipo": r[3],
+            "estado": estado,
+            "view_estado": view_estado,
+            "equipo": ({"equipo_id": r[10], "equipo_codigo": r[11], "equipo_nombre": r[12]}
+                       if r[10] is not None else None),
+            "prestamo_origen_area_id": loan_origen,
+            "prestamo_origen_area_nombre": origen_nom,
+            "prestamo_destino_area_id": loan_dest,
+            "prestamo_destino_area_nombre": destino_nom,
+        })
+    return {"items": out, "total": int(total or 0), "page": p, "size": s}
+
+
+# ============================================================
+# ASIGNAR / RETIRAR ITEM DEL EQUIPO
+# ============================================================
 def assign_item_to_equipo(
     app_user: str,
     equipo_id: int,
     item_id: int,
     slot: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """
-    Asigna item -> equipo usando PK compuesta (equipo_id, item_id).
-    No usa columna 'updated_at' en inv.items.
-    """
     with get_conn(app_user) as (conn, cur):
-        # Contexto para mov_motivo
         cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.assign_item',))
 
-        # 1) Validar equipo y obtener su área
         cur.execute("SELECT equipo_area_id FROM inv.equipos WHERE equipo_id=%s", (equipo_id,))
         r = cur.fetchone()
         if not r:
             return False, "Equipo no encontrado"
         equipo_area_id = int(r[0])
 
-        # 2) Validar ítem
         cur.execute("SELECT area_id, estado FROM inv.items WHERE item_id=%s", (item_id,))
         r = cur.fetchone()
         if not r:
             return False, "Item no encontrado"
-        item_area_id, _estado_actual = r[0], r[1]
 
-        if item_area_id is not None and equipo_area_id is not None and int(item_area_id) != int(equipo_area_id):
-            return False, "El ítem pertenece a otra área"
+        cur.execute("SELECT equipo_id FROM inv.equipo_items WHERE item_id=%s", (item_id,))
+        prev = cur.fetchone()
+        if prev:
+            cur.execute("DELETE FROM inv.equipo_items WHERE item_id=%s", (item_id,))
 
-        # 3) ¿Ya está asignado a algún equipo?
         cur.execute("""
-            SELECT equipo_id, slot_o_ubicacion
-              FROM inv.equipo_items
-             WHERE item_id=%s
-        """, (item_id,))
-        rel = cur.fetchone()
+            INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
+            VALUES (%s,%s,%s)
+        """, (equipo_id, item_id, slot))
 
-        if rel:
-            old_equipo_id = int(rel[0])
-            if old_equipo_id == equipo_id:
-                # idempotente: actualizar slot si cambió
-                cur.execute("""
-                    UPDATE inv.equipo_items
-                       SET slot_o_ubicacion=%s
-                     WHERE equipo_id=%s AND item_id=%s
-                """, (slot, equipo_id, item_id))
-            else:
-                # mover: borrar relación anterior y crear la nueva
-                cur.execute("DELETE FROM inv.equipo_items WHERE item_id=%s", (item_id,))
-                cur.execute("""
-                    INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
-                    VALUES (%s,%s,%s)
-                """, (equipo_id, item_id, slot))
+        active = _get_active_loan(cur, item_id)
+        if active is not None and active[1] == equipo_area_id:
+            cur.execute("UPDATE inv.items SET estado='EN_USO_PRESTADO' WHERE item_id=%s", (item_id,))
         else:
-            # crear relación nueva
-            cur.execute("""
-                INSERT INTO inv.equipo_items(equipo_id, item_id, slot_o_ubicacion)
-                VALUES (%s,%s,%s)
-            """, (equipo_id, item_id, slot))
+            cur.execute("UPDATE inv.items SET estado='EN_USO' WHERE item_id=%s", (item_id,))
 
-        # 4) Estado del ítem
-        cur.execute("UPDATE inv.items SET estado='EN_USO' WHERE item_id=%s", (item_id,))
-
-        # 5) Movimiento (sin mov_motivo -> usa DEFAULT con app.proc)
         cur.execute("""
           INSERT INTO inv.movimientos(
             mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
@@ -393,17 +503,14 @@ def assign_item_to_equipo(
             %s, 'ASIGNACION', %s, %s, %s, current_setting('app.user', true),
             %s
           )
-        """, (item_id, equipo_area_id, equipo_area_id, equipo_id, None if slot is None else {'slot': slot}))
+        """, (item_id, equipo_area_id, equipo_area_id, equipo_id,
+              None if slot is None else {'slot': slot}))
 
         return True, None
 
 
-# ---------------------------------------------------
-# Retirar ítem del equipo
-# ---------------------------------------------------
 def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
     with get_conn(app_user) as (conn, cur):
-        # Contexto para mov_motivo
         cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.unassign_item',))
 
         cur.execute("DELETE FROM inv.equipo_items WHERE equipo_id=%s AND item_id=%s RETURNING 1",
@@ -411,10 +518,13 @@ def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
         if not cur.fetchone():
             return "El item no estaba asignado"
 
-        # Estado de vuelta a ALMACEN (sin updated_at)
-        cur.execute("UPDATE inv.items SET estado='ALMACEN' WHERE item_id=%s", (item_id,))
+        # Si estaba prestado a otra área y sigue el préstamo activo, vuelve a 'PRESTAMO'; si no, 'ALMACEN'
+        active = _get_active_loan(cur, item_id)
+        if active is not None:
+            cur.execute("UPDATE inv.items SET estado='PRESTAMO' WHERE item_id=%s", (item_id,))
+        else:
+            cur.execute("UPDATE inv.items SET estado='ALMACEN' WHERE item_id=%s", (item_id,))
 
-        # Movimiento (sin mov_motivo -> usa DEFAULT con app.proc)
         cur.execute("""
           INSERT INTO inv.movimientos(
             mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
@@ -426,9 +536,9 @@ def unassign_item(app_user: str, equipo_id: int, item_id: int) -> Optional[str]:
     return None
 
 
-# ---------------------------------------------------
-# Actualizar metadatos del equipo
-# ---------------------------------------------------
+# ============================================================
+# ACTUALIZAR META DEL EQUIPO
+# ============================================================
 def update_equipo_meta(
     app_user: str,
     equipo_id: int,
@@ -456,28 +566,20 @@ def update_equipo_meta(
     sql = "UPDATE inv.equipos SET " + ", ".join(pieces) + " WHERE equipo_id=%s"
     params.append(equipo_id)
     with get_conn(app_user) as (conn, cur):
-        # Contexto para mov_motivo (el trigger de equipo registrará los cambios)
         cur.execute("SELECT set_config('app.proc', %s, true)", ('equipos.update_meta',))
         cur.execute(sql, params)
     return None
 
 
-# ---------------------------------------------------
-# Siguiente código sugerido por área (nuevo)
-# ---------------------------------------------------
+# ============================================================
+# SUGERIR CÓDIGO DE EQUIPO POR ÁREA
+# ============================================================
 def get_next_equipo_code(
     app_user: str,
     area_id: int,
     prefix: Optional[str] = None,
     pad: int = 3,
 ) -> str:
-    """
-    Genera el siguiente código consecutivo por área.
-    - Si se pasa prefix (ej. 'PC-'), filtra por ese prefijo.
-    - Extrae el sufijo numérico (al final del código) y lo incrementa.
-    - Si no hay registros previos, empieza en 1.
-    - Devuelve con zero-padding (pad).
-    """
     pref = (prefix or "PC-").strip()
     if pref == "":
         pref = "PC-"
@@ -498,3 +600,80 @@ def get_next_equipo_code(
     nxt = max_num + 1
     suf = str(nxt).zfill(max(1, int(pad or 3)))
     return f"{pref}{suf}"
+
+
+# ============================================================
+# PRESTAR / DEVOLVER
+# ============================================================
+def prestar_item(
+    app_user: str,
+    item_id: int,
+    destino_area_id: int,
+    detalle: Optional[Dict[str, Any]] = None,
+    mov_equipo_id: Optional[int] = None,
+) -> Tuple[bool, Optional[str]]:
+    with get_conn(app_user) as (conn, cur):
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('items.prestar',))
+
+        cur.execute("SELECT area_id FROM inv.items WHERE item_id=%s", (item_id,))
+        r = cur.fetchone()
+        if not r:
+            return False, "Item no existe"
+        origen_area_id = int(r[0]) if r[0] is not None else None
+
+        if destino_area_id == origen_area_id:
+            return False, "Destino no puede ser el mismo que el origen"
+
+        det = (detalle or {}).copy()
+        det["es_prestamo"] = True
+        det_json = dumps(det)
+
+        cur.execute("""
+          INSERT INTO inv.movimientos(
+            mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
+            mov_equipo_id, mov_usuario_app, mov_detalle
+          ) VALUES (
+            %s, 'TRASLADO', %s, %s, %s, current_setting('app.user', true), %s::jsonb
+          )
+        """, (item_id, origen_area_id, destino_area_id, mov_equipo_id, det_json))
+
+        # Estado genérico durante el préstamo. La vista por área mostrará view_estado según corresponda.
+        cur.execute("UPDATE inv.items SET estado='PRESTAMO' WHERE item_id=%s", (item_id,))
+        return True, None
+
+
+def devolver_item(
+    app_user: str,
+    item_id: int,
+    detalle: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, Optional[str]]:
+    with get_conn(app_user) as (conn, cur):
+        cur.execute("SELECT set_config('app.proc', %s, true)", ('items.devolver',))
+
+        active = _get_active_loan(cur, item_id)
+        if not active:
+            return False, "El ítem no tiene préstamo activo"
+        origen_area_id, destino_area_id, _ = active
+
+        det = (detalle or {}).copy()
+        det["es_prestamo"] = False
+        det["devolucion"]   = True
+        det_json = dumps(det)
+
+        # traslado de retorno (destino -> origen)
+        cur.execute("""
+          INSERT INTO inv.movimientos(
+            mov_item_id, mov_tipo, mov_origen_area_id, mov_destino_area_id,
+            mov_usuario_app, mov_detalle
+          ) VALUES (
+            %s, 'TRASLADO', %s, %s, current_setting('app.user', true), %s::jsonb
+          )
+        """, (item_id, destino_area_id, origen_area_id, det_json))
+
+        # desmontar de cualquier equipo donde esté asignado
+        cur.execute("DELETE FROM inv.equipo_items WHERE item_id=%s", (item_id,))
+
+        # estado final: ALMACEN (regresa al origen)
+        cur.execute("UPDATE inv.items SET estado='ALMACEN' WHERE item_id=%s", (item_id,))
+
+        return True, None
