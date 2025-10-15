@@ -31,11 +31,12 @@ def create_user():
     rol = (d.get("rol") or "").strip().upper()
     area_id = d.get("area_id")
 
-    if not username or not password or rol not in ("ADMIN","SOPORTE","PRACTICANTE") or not area_id:
+    if not username or not password or rol not in ("ADMIN","PRACTICANTE","USUARIO") or not area_id:
         return {"error":"Datos inválidos"}, 400
 
     new_id, err = user_model.create_user(request.claims["username"], username, password, rol, int(area_id))
     if err: return {"error": err}, 400
+    # la respuesta expone el rol normalizado de salida
     return {"id": new_id, "username": username, "rol": rol, "area_id": int(area_id)}
 
 @bp.patch("/<int:user_id>")
@@ -57,4 +58,3 @@ def delete_user(user_id):
     err = user_model.delete_user(request.claims["username"], user_id)
     if err: return {"error": err}, 400
     return {"ok": True}
-

@@ -1,7 +1,8 @@
 # app/models/media_model.py
 from typing import Optional
 from app.db import get_conn
-from psycopg.types.json import Json  # por si tu driver lo requiere en otros módulos
+from psycopg.types.json import Json  # si lo usas en otros módulos, no estorba aquí
+
 
 def add_media(
     app_user: str,
@@ -37,53 +38,23 @@ def add_media(
 
 def delete_media(app_user: str, item_id: int, path: str) -> Optional[str]:
     """
-    Elimina el registro de media del ítem.
-    - Primero intenta en inv.item_fotos(foto_url)
-    - Si no existe o no borra, intenta en inv.item_media(path)
-
-    Devuelve None si OK; string de error en caso contrario.
+    Elimina la imagen del item en inv.item_media usando la columna 'path'.
+    Devuelve None si se eliminó; string con error si no se encontró o falló.
     """
     with get_conn(app_user) as (conn, cur):
-        # ¿Existe tabla item_fotos?
         try:
-            cur.execute("""
-                SELECT 1
-                  FROM information_schema.tables
-                 WHERE table_schema='inv' AND table_name='item_fotos'
-            """)
-            has_fotos = cur.fetchone() is not None
-        except Exception:
-            has_fotos = False
-
-        if has_fotos:
-            # Intenta borrar por foto_url
-            cur.execute("""
-                DELETE FROM inv.item_fotos
-                 WHERE item_id=%s AND foto_url=%s
-                 RETURNING 1
-            """, (item_id, path))
-            if cur.fetchone():
-                return None  # borrado OK
-
-        # ¿Existe tabla item_media?
-        try:
-            cur.execute("""
-                SELECT 1
-                  FROM information_schema.tables
-                 WHERE table_schema='inv' AND table_name='item_media'
-            """)
-            has_media = cur.fetchone() is not None
-        except Exception:
-            has_media = False
-
-        if has_media:
-            cur.execute("""
+            cur.execute(
+                """
                 DELETE FROM inv.item_media
-                 WHERE item_id=%s AND path=%s
+                 WHERE item_id = %s
+                   AND path    = %s
                  RETURNING 1
-            """, (item_id, path))
-            if cur.fetchone():
-                return None  # borrado OK
-
-        # Si ninguna borró, reportar
-        return "Imagen no encontrada o no se pudo eliminar"
+                """,
+                (item_id, path),
+            )
+            row = cur.fetchone()
+            if row:
+                return None
+            return "No se encontró la imagen para eliminar"
+        except Exception as e:
+            return f"Error al eliminar imagen: {e}"

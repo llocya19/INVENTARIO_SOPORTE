@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import http from "../api/http";
 import { useNavigate, useParams } from "react-router-dom";
 
-/* ---------- Tipos ---------- */
+/* =========================
+   Tipos
+========================= */
 type Clase = "COMPONENTE" | "PERIFERICO";
 type ItemType = { id: number; clase: Clase; nombre: string };
 type ItemRow = {
@@ -15,32 +17,72 @@ type ItemRow = {
 };
 type ItemsPage = { items: ItemRow[]; total: number; page: number; size: number };
 
-/* ---------- UI helpers ---------- */
+/* =========================
+   Tema Hospital – Crema + Blanco (Tailwind)
+========================= */
+const BG_APP = "bg-[#FFFDF8]";
+const TEXT = "text-slate-800";
+const MUTED = "text-slate-600";
+
+const section = "rounded-2xl border border-slate-200 bg-white shadow-sm";
+const card = section + " p-4 md:p-5";
+const baseText = "leading-relaxed tracking-[0.01em]";
+
+const focusRing =
+  "focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:border-emerald-300/60";
+const fieldBase =
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-base placeholder-slate-400 " +
+  TEXT +
+  " " +
+  focusRing +
+  " transition";
+
+const btnBase =
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base " +
+  TEXT +
+  " hover:bg-slate-50 active:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] min-w-[88px]";
+const btnPrimary =
+  "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base bg-emerald-600 text-white font-medium hover:bg-emerald-500 active:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] min-w-[112px]";
+
+/* Pill VERDE para contador */
+const pill =
+  "inline-flex items-center justify-center rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5";
+
+/* =========================
+   UI helpers
+========================= */
 function Drawer(props: {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
   title?: string;
+  subtitle?: string;
 }) {
-  const { open, onClose, children, title } = props;
+  const { open, onClose, children, title, subtitle } = props;
   return (
     <>
-      {/* overlay */}
       <div
-        className={`fixed inset-0 bg-black/30 transition-opacity ${open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+        className={`fixed inset-0 bg-black/30 transition-opacity ${
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
         onClick={onClose}
       />
-      {/* panel */}
       <div
-        className={`fixed right-0 top-0 h-full w-full sm:w-[480px] bg-white shadow-2xl transition-transform duration-300
-        ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`fixed right-0 top-0 h-full w-full sm:w-[520px] bg-white shadow-2xl transition-transform duration-300 ${
+          open ? "translate-x-0" : "translate-x-full"
+        }`}
       >
         <div className="h-full flex flex-col">
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <div className="font-semibold">{title || "Seleccionados"}</div>
-            <button className="rounded-lg px-3 py-1.5 border" onClick={onClose}>
-              Cerrar
-            </button>
+          <div className="px-5 py-4 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-lg">{title || "Seleccionados"}</div>
+                {subtitle && <div className={MUTED + " text-sm"}>{subtitle}</div>}
+              </div>
+              <button className={btnBase} onClick={onClose} aria-label="Cerrar">
+                Cerrar
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">{children}</div>
         </div>
@@ -49,60 +91,9 @@ function Drawer(props: {
   );
 }
 
-function LocalPager<T>({
-  data,
-  page,
-  size,
-  onPage,
-  onSize,
-}: {
-  data: T[];
-  page: number;
-  size: number;
-  onPage: (p: number) => void;
-  onSize: (s: number) => void;
-}) {
-  const totalPages = Math.max(1, Math.ceil(data.length / size));
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <div>
-        Página {Math.min(page, totalPages)} de {totalPages} · {data.length} ítems
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          className="px-3 py-1.5 rounded-lg border"
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-        >
-          ◀
-        </button>
-        <select
-          className="border rounded-lg px-2 py-1.5"
-          value={size}
-          onChange={(e) => {
-            onPage(1);
-            onSize(Number(e.target.value));
-          }}
-        >
-          {[5, 10, 20, 50].map((s) => (
-            <option key={s} value={s}>
-              {s} / pág
-            </option>
-          ))}
-        </select>
-        <button
-          className="px-3 py-1.5 rounded-lg border"
-          disabled={page >= totalPages}
-          onClick={() => onPage(page + 1)}
-        >
-          ▶
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Página ---------- */
+/* =========================
+   Página
+========================= */
 export default function EquipoNuevo() {
   const { areaId } = useParams();
   const aid = Number(areaId);
@@ -169,7 +160,7 @@ export default function EquipoNuevo() {
           setForm((f) => ({ ...f, codigo: r.data.next_code }));
         }
       } catch {
-        // si falla, se deja vacío y el usuario puede escribir a mano
+        // opcional
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,180 +230,167 @@ export default function EquipoNuevo() {
     }
   }
 
-  /* ---------- UI ---------- */
+  /* =========================
+     Render
+  ========================= */
   return (
-    <div className="max-w-7xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-xl font-semibold">Nuevo equipo (desde ALMACÉN)</div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-600">Seleccionados: </span>
+    <div className={`${BG_APP} ${TEXT} min-h-[calc(100vh-64px)]`}>
+      <div className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-5 space-y-5">
+        {/* Header */}
+        <div className={`${section} px-4 py-4 md:px-6 md:py-5 ${baseText}`}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h1 className="text-[22px] md:text-[26px] font-semibold">
+                Nuevo equipo <span className="text-emerald-600">•</span>{" "}
+                <span className="font-normal text-slate-500">desde Almacén</span>
+              </h1>
+              <div className={MUTED + " text-sm"}>Área ID {aid}</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-emerald-700 text-sm">Seleccionados</span>
+              <button className={pill} onClick={() => setOpenDrawer(true)} title="Ver seleccionados">
+                {totalSelected}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mensajes */}
+        {msg && <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800">{msg}</div>}
+        {ok && <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800">{ok}</div>}
+
+        {/* Meta equipo */}
+        <div className={card + " " + baseText}>
+          <div className="text-base font-medium mb-3">Datos del equipo</div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Código</div>
+              <input
+                className={fieldBase + " mt-1"}
+                value={form.codigo}
+                onChange={(e) => setForm({ ...form, codigo: e.target.value })}
+                placeholder="Ej. PC-001"
+              />
+            </label>
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Nombre</div>
+              <input
+                className={fieldBase + " mt-1"}
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                placeholder="Nombre visible"
+              />
+            </label>
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Estado</div>
+              <select
+                className={fieldBase + " mt-1"}
+                value={form.estado}
+                onChange={(e) => setForm({ ...form, estado: e.target.value })}
+              >
+                <option value="ALMACEN">ALMACEN</option>
+                <option value="USO">USO</option>
+                <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+                <option value="BAJA">BAJA</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Usuario final</div>
+              <input
+                className={fieldBase + " mt-1"}
+                value={form.usuario_final}
+                onChange={(e) => setForm({ ...form, usuario_final: e.target.value })}
+                placeholder="Ej. Juan Pérez"
+              />
+            </label>
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Login</div>
+              <input
+                className={fieldBase + " mt-1"}
+                value={form.login}
+                onChange={(e) => setForm({ ...form, login: e.target.value })}
+                placeholder="cuenta/red"
+              />
+            </label>
+            <label className="block">
+              <div className={MUTED + " text-sm"}>Password</div>
+              <input
+                className={fieldBase + " mt-1"}
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="••••••••"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Lista de Componentes */}
+        <SelectorLista
+          title="Componentes disponibles"
+          page={pageC}
+          types={typesC}
+          filter={filtC}
+          onFilter={setFiltC}
+          rows={compLeft}
+          onApply={(p, s) => loadDisponibles("COMPONENTE", p, s)}
+          onAdd={(row) => setSelComp((v) => [...v, row])}
+        />
+
+        {/* Lista de Periféricos */}
+        <SelectorLista
+          title="Periféricos disponibles"
+          page={pageP}
+          types={typesP}
+          filter={filtP}
+          onFilter={setFiltP}
+          rows={periLeft}
+          onApply={(p, s) => loadDisponibles("PERIFERICO", p, s)}
+          onAdd={(row) => setSelPeri((v) => [...v, row])}
+        />
+
+        <div className="flex justify-end">
           <button
-            className="px-3 py-1.5 rounded-full bg-slate-900 text-white"
-            onClick={() => setOpenDrawer(true)}
+            className={btnPrimary}
+            onClick={crearEquipo}
+            disabled={totalSelected === 0 || !form.codigo.trim() || !form.nombre.trim()}
+            title={totalSelected === 0 ? "Agrega al menos 1 ítem" : "Crear equipo"}
           >
-            {totalSelected}
+            Crear equipo
           </button>
         </div>
-      </div>
 
-      {msg && <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{msg}</div>}
-      {ok && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">{ok}</div>}
-
-      {/* Meta equipo */}
-      <div className="bg-white rounded-2xl shadow p-4 space-y-3">
-        <div className="grid sm:grid-cols-3 gap-3">
-          <div>
-            <div className="text-sm text-slate-600">Código</div>
-            <input
-              className="w-full border rounded-lg px-3 py-2"
-              value={form.codigo}
-              onChange={(e) => setForm({ ...form, codigo: e.target.value })}
-              placeholder="Ej. PC-001"
-            />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Nombre</div>
-            <input
-              className="w-full border rounded-lg px-3 py-2"
-              value={form.nombre}
-              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              placeholder="Nombre visible"
-            />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Estado</div>
-            <select
-              className="w-full border rounded-lg px-3 py-2"
-              value={form.estado}
-              onChange={(e) => setForm({ ...form, estado: e.target.value })}
-            >
-              <option value="ALMACEN">ALMACEN</option>
-              <option value="USO">USO</option>
-              <option value="MANTENIMIENTO">MANTENIMIENTO</option>
-              <option value="BAJA">BAJA</option>
-            </select>
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Usuario final</div>
-            <input
-              className="w-full border rounded-lg px-3 py-2"
-              value={form.usuario_final}
-              onChange={(e) => setForm({ ...form, usuario_final: e.target.value })}
-            />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Login</div>
-            <input
-              className="w-full border rounded-lg px-3 py-2"
-              value={form.login}
-              onChange={(e) => setForm({ ...form, login: e.target.value })}
-            />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Password</div>
-            <input
-              className="w-full border rounded-lg px-3 py-2"
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Lista de disponibles - Componentes */}
-      <SelectorLista
-        title="Componentes disponibles"
-        page={pageC}
-        types={typesC}
-        filter={filtC}
-        onFilter={setFiltC}
-        rows={compLeft}
-        onApply={(p, s) => loadDisponibles("COMPONENTE", p, s)}
-        onAdd={(row) => setSelComp((v) => [...v, row])}
-      />
-
-      {/* Lista de disponibles - Periféricos */}
-      <SelectorLista
-        title="Periféricos disponibles"
-        page={pageP}
-        types={typesP}
-        filter={filtP}
-        onFilter={setFiltP}
-        rows={periLeft}
-        onApply={(p, s) => loadDisponibles("PERIFERICO", p, s)}
-        onAdd={(row) => setSelPeri((v) => [...v, row])}
-      />
-
-      <div className="flex justify-end">
-        <button
-          className="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50"
-          onClick={crearEquipo}
-          disabled={totalSelected === 0 || !form.codigo.trim() || !form.nombre.trim()}
+        {/* Drawer de seleccionados */}
+        <Drawer
+          open={openDrawer}
+          onClose={() => setOpenDrawer(false)}
+          title="Ítems seleccionados"
+          subtitle={`${totalSelected} seleccionado${totalSelected === 1 ? "" : "s"}`}
         >
-          Crear equipo
-        </button>
-      </div>
-
-      {/* Drawer de seleccionados */}
-      <Drawer open={openDrawer} onClose={() => setOpenDrawer(false)} title="Ítems seleccionados">
-        <div className="p-4 space-y-3">
-          <LocalPager
-            data={[...selComp, ...selPeri]}
-            page={spage}
-            size={ssize}
-            onPage={setSpage}
-            onSize={setSsize}
-          />
-          <div className="overflow-x-auto">
-            <table className="min-w-full table-auto">
-              <thead className="bg-slate-50">
-                <tr className="text-left text-sm text-slate-600">
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Clase</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...selComp, ...selPeri]
-                  .slice((spage - 1) * ssize, spage * ssize)
-                  .map((r) => (
-                    <tr key={`s-${r.item_id}`} className="border-t">
-                      <td className="px-3 py-2">{r.item_codigo}</td>
-                      <td className="px-3 py-2">{r.clase}</td>
-                      <td className="px-3 py-2">{r.tipo}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          className="px-3 py-1.5 rounded-lg border"
-                          onClick={() => {
-                            if (r.clase === "COMPONENTE")
-                              setSelComp((v) => v.filter((x) => x.item_id !== r.item_id));
-                            else setSelPeri((v) => v.filter((x) => x.item_id !== r.item_id));
-                          }}
-                        >
-                          Quitar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                {totalSelected === 0 && (
-                  <tr>
-                    <td className="px-3 py-6 text-slate-500" colSpan={4}>
-                      Sin seleccionados
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="p-4 space-y-3">
+            <SelectedTable
+              data={[...selComp, ...selPeri]}
+              page={spage}
+              size={ssize}
+              onPage={setSpage}
+              onSize={setSsize}
+              onRemove={(r) => {
+                if (r.clase === "COMPONENTE")
+                  setSelComp((v) => v.filter((x) => x.item_id !== r.item_id));
+                else setSelPeri((v) => v.filter((x) => x.item_id !== r.item_id));
+              }}
+            />
           </div>
-        </div>
-      </Drawer>
+        </Drawer>
+      </div>
     </div>
   );
 }
 
-/* ---------- SelectorLista ---------- */
+/* =========================
+   SelectorLista
+========================= */
 function SelectorLista(props: {
   title: string;
   page: ItemsPage;
@@ -427,14 +405,20 @@ function SelectorLista(props: {
   const totalPages = Math.max(1, Math.ceil(page.total / page.size));
 
   return (
-    <div className="bg-white rounded-2xl shadow p-4 space-y-3">
-      <div className="text-lg font-semibold">{title}</div>
+    <div className={card + " " + baseText}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-base font-medium">{title}</div>
+        <div className={MUTED + " text-sm"}>
+          Página {page.page} / {totalPages} · {page.total} ítems
+        </div>
+      </div>
 
-      <div className="grid sm:grid-cols-3 gap-2">
-        <div>
-          <div className="text-sm text-slate-600">Tipo</div>
+      {/* Filtros */}
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+        <label className="block">
+          <div className={MUTED + " text-sm"}>Tipo</div>
           <select
-            className="w-full border rounded-lg px-3 py-2"
+            className={fieldBase + " mt-1"}
             value={filter.tipo}
             onChange={(e) => onFilter({ ...filter, tipo: e.target.value })}
           >
@@ -445,21 +429,24 @@ function SelectorLista(props: {
               </option>
             ))}
           </select>
-        </div>
-        <div>
-          <div className="text-sm text-slate-600">Buscar código</div>
+        </label>
+
+        <label className="block">
+          <div className={MUTED + " text-sm"}>Buscar por código</div>
           <input
-            className="w-full border rounded-lg px-3 py-2"
+            className={fieldBase + " mt-1"}
             value={filter.q}
             onChange={(e) => onFilter({ ...filter, q: e.target.value })}
+            placeholder="Ej. ITM-0001"
           />
-        </div>
+        </label>
+
         <div className="flex items-end gap-2">
-          <button className="px-3 py-2 rounded-lg border" onClick={() => onApply(1, page.size)}>
+          <button className={btnBase + " w-full md:w-auto"} onClick={() => onApply(1, page.size)}>
             Aplicar
           </button>
           <button
-            className="px-3 py-2 rounded-lg border"
+            className={btnBase + " w-full md:w-auto"}
             onClick={() => {
               onFilter({ tipo: "", q: "" });
               onApply(1, page.size);
@@ -470,7 +457,8 @@ function SelectorLista(props: {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Tabla */}
+      <div className="overflow-x-auto mt-4">
         <table className="min-w-full table-auto">
           <thead className="bg-slate-50">
             <tr className="text-left text-sm text-slate-600">
@@ -487,10 +475,7 @@ function SelectorLista(props: {
                 <td className="px-3 py-2">{r.tipo}</td>
                 <td className="px-3 py-2">{r.estado}</td>
                 <td className="px-3 py-2 text-right">
-                  <button
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 text-white"
-                    onClick={() => onAdd(r)}
-                  >
+                  <button className={btnPrimary} onClick={() => onAdd(r)}>
                     Agregar
                   </button>
                 </td>
@@ -507,37 +492,126 @@ function SelectorLista(props: {
         </table>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-slate-600">
-          Página {page.page} de {totalPages} · {page.total} ítems
+      {/* Paginación */}
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <button
+          className={btnBase}
+          disabled={page.page <= 1}
+          onClick={() => onApply(page.page - 1, page.size)}
+        >
+          ◀
+        </button>
+        <select
+          className={fieldBase + " w-28"}
+          value={page.size}
+          onChange={(e) => onApply(1, Number(e.target.value))}
+          aria-label="Tamaño de página"
+        >
+          {[10, 20, 50].map((s) => (
+            <option key={s} value={s}>
+              {s} / pág
+            </option>
+          ))}
+        </select>
+        <button
+          className={btnBase}
+          disabled={page.page >= totalPages}
+          onClick={() => onApply(page.page + 1, page.size)}
+        >
+          ▶
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   Tabla de seleccionados (en Drawer)
+========================= */
+function SelectedTable({
+  data,
+  page,
+  size,
+  onPage,
+  onSize,
+  onRemove,
+}: {
+  data: ItemRow[];
+  page: number;
+  size: number;
+  onPage: (p: number) => void;
+  onSize: (s: number) => void;
+  onRemove: (r: ItemRow) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(data.length / size));
+  const slice = data.slice((page - 1) * size, page * size);
+
+  return (
+    <div className={section}>
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className={MUTED + " text-sm"}>
+          Página {Math.min(page, totalPages)} / {totalPages} · {data.length} ítems
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-1.5 rounded-lg border"
-            disabled={page.page <= 1}
-            onClick={() => onApply(page.page - 1, page.size)}
-          >
+          <button className={btnBase} disabled={page <= 1} onClick={() => onPage(page - 1)}>
             ◀
           </button>
           <select
-            className="border rounded-lg px-2 py-1.5"
-            value={page.size}
-            onChange={(e) => onApply(1, Number(e.target.value))}
+            className={fieldBase + " w-28"}
+            value={size}
+            onChange={(e) => {
+              onSize(Number(e.target.value));
+              onPage(1);
+            }}
           >
-            {[10, 20, 50].map((s) => (
+            {[5, 10, 20, 50].map((s) => (
               <option key={s} value={s}>
                 {s} / pág
               </option>
             ))}
           </select>
           <button
-            className="px-3 py-1.5 rounded-lg border"
-            disabled={page.page >= totalPages}
-            onClick={() => onApply(page.page + 1, page.size)}
+            className={btnBase}
+            disabled={page >= totalPages}
+            onClick={() => onPage(page + 1)}
           >
             ▶
           </button>
         </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full table-auto">
+          <thead className="bg-slate-50">
+            <tr className="text-left text-sm text-slate-600">
+              <th className="px-3 py-2">Código</th>
+              <th className="px-3 py-2">Clase</th>
+              <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slice.map((r) => (
+              <tr key={r.item_id} className="border-t">
+                <td className="px-3 py-2">{r.item_codigo}</td>
+                <td className="px-3 py-2">{r.clase}</td>
+                <td className="px-3 py-2">{r.tipo}</td>
+                <td className="px-3 py-2 text-right">
+                  <button className={btnBase} onClick={() => onRemove(r)}>
+                    Quitar
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {data.length === 0 && (
+              <tr>
+                <td className="px-3 py-6 text-slate-500" colSpan={4}>
+                  Sin seleccionados
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

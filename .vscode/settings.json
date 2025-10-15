@@ -1,4 +1,12 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "python.analysis.extraPaths": [
+        "./backend",
+        "./backend",
+        "./backend",
+        "./backend",
+        "./backend",
+        "./backend"
+    ]
 }

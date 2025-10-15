@@ -3,14 +3,26 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import http from "../api/http";
 
-/* ---------- Tipos del backend (alineados) ---------- */
+/* ====================== Tema Hospital (crema + blanco) ====================== */
+const BG_APP = "bg-[#FFFDF8]";
+const TEXT = "text-slate-800";
+const MUTED = "text-slate-600";
+const section = "rounded-2xl border border-slate-200 bg-white shadow-sm";
+const card = section + " p-4 sm:p-5";
+const focusRing =
+  "focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:border-emerald-300/60";
+const fieldBase =
+  "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-[15px] " +
+  "placeholder-slate-400 " + TEXT + " " + focusRing + " transition";
+
+/* =============================== Tipos API =============================== */
 type Clase = "COMPONENTE" | "PERIFERICO";
 
 type EquipoHeaderAPI = {
   equipo_id: number;
   equipo_codigo: string;
   equipo_nombre: string;
-  area_id: number; // <- fixed
+  area_id: number;
   estado: string;
   usuario_final: string | null;
   login: string | null;
@@ -40,14 +52,55 @@ type ItemDisponible = {
 type ItemsPage = { items: ItemDisponible[]; total: number; page: number; size: number };
 type ItemType = { id: number; clase: Clase; nombre: string };
 
-/* ---------- UI helpers ---------- */
-const card = "bg-white rounded-2xl shadow-sm ring-1 ring-slate-200";
-const field =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/30 focus:border-slate-400 transition";
-const btn =
-  "inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 active:bg-slate-100 transition";
-const btnPrimary =
-  "inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:opacity-95 active:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed";
+/* ============================== UI Helpers ============================== */
+function Button(
+  props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: "primary" | "secondary" | "subtle" | "danger";
+  }
+) {
+  const { children, variant = "primary", className = "", ...rest } = props;
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition min-h-[44px]";
+  const map = {
+    primary:
+      "bg-emerald-600 text-white hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed",
+    secondary:
+      "bg-white text-slate-800 border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed",
+    subtle: "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100",
+    danger: "bg-rose-600 text-white hover:bg-rose-700",
+  } as const;
+  return (
+    <button className={`${base} ${map[variant]} ${className}`} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+function Icon({
+  name,
+  className = "h-4 w-4",
+}: {
+  name: "chevL" | "chevR" | "close";
+  className?: string;
+}) {
+  if (name === "chevL")
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  if (name === "chevR")
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function BadgeEstado({ estado }: { estado?: string }) {
   const e = (estado || "").toUpperCase();
@@ -89,7 +142,7 @@ function SkeletonRow() {
   );
 }
 
-/* ---------- Página ---------- */
+/* ================================= Página ================================ */
 export default function EquipoDetalle() {
   const { id } = useParams();
   const equipoId = Number(id);
@@ -123,7 +176,7 @@ export default function EquipoDetalle() {
   const areaId = useMemo(() => header?.area_id ?? 0, [header]);
   const isEnUso = ((header?.estado || edit.estado) ?? "").toUpperCase() === "USO";
 
-  /* ---------- Cargas ---------- */
+  /* ------------------------------- Cargas ------------------------------- */
   async function loadDetalle(showOk?: string) {
     setLoading(true);
     setMsg(null);
@@ -190,7 +243,7 @@ export default function EquipoDetalle() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openAdd, addClase, areaId]);
 
-  /* ---------- Acciones ---------- */
+  /* -------------------------------- Acciones ------------------------------- */
   const onPatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setMsg(null);
@@ -214,10 +267,10 @@ export default function EquipoDetalle() {
     setOk(null);
     try {
       await http.post(`/api/equipos/${equipoId}/items`, { item_id: it.item_id, slot: null });
-      await loadDetalle("Item asignado");
+      await loadDetalle("Ítem asignado");
       await loadDisponibles(addPage.page, addPage.size);
     } catch (er: any) {
-      setMsg(er?.response?.data?.error || "No se pudo asignar el item");
+      setMsg(er?.response?.data?.error || "No se pudo asignar el ítem");
     }
   };
 
@@ -227,292 +280,276 @@ export default function EquipoDetalle() {
     setOk(null);
     try {
       await http.delete(`/api/equipos/${equipoId}/items/${it.item_id}`);
-      await loadDetalle("Item retirado");
+      await loadDetalle("Ítem retirado");
       if (openAdd) await loadDisponibles(addPage.page, addPage.size);
     } catch (er: any) {
-      setMsg(er?.response?.data?.error || "No se pudo retirar el item");
+      setMsg(er?.response?.data?.error || "No se pudo retirar el ítem");
     }
   };
 
-  /* ---------- UI ---------- */
+  /* --------------------------------- UI --------------------------------- */
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold">{header?.equipo_nombre || "Equipo"}</h1>
-            <BadgeEstado estado={header?.estado} />
-          </div>
-          {header && (
-            <div className="text-sm text-slate-600 flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                Área ID {header.area_id}
-              </span>
-              <span className="text-slate-500">·</span>
-              <span className="font-mono">{header.equipo_codigo}</span>
-              <span className="text-slate-500">·</span>
-              <span>
-                Creado:{" "}
-                <b>{header?.created_at ? new Date(header.created_at).toLocaleString() : "-"}</b>
-              </span>
-              <span className="text-slate-500">·</span>
-              <span>
-                Modificado:{" "}
-                <b>{header?.updated_at ? new Date(header.updated_at).toLocaleString() : "-"}</b>
-              </span>
+    <div className={`${BG_APP} ${TEXT} min-h-[calc(100vh-64px)]`}>
+      <div className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-5 space-y-5">
+        {/* Header */}
+        <div className={section + " p-4 sm:p-5"}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-[22px] font-semibold">{header?.equipo_nombre || "Equipo"}</h1>
+                <BadgeEstado estado={header?.estado} />
+              </div>
+              {header && (
+                <div className={`${MUTED} text-sm flex items-center gap-2 flex-wrap`}>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                    Área ID {header.area_id}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="font-mono">{header.equipo_codigo}</span>
+                  <span className="text-slate-400">·</span>
+                  <span>
+                    Creado: <b>{header?.created_at ? new Date(header.created_at).toLocaleString() : "-"}</b>
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span>
+                    Modificado: <b>{header?.updated_at ? new Date(header.updated_at).toLocaleString() : "-"}</b>
+                  </span>
+                </div>
+              )}
             </div>
-          )}
+            {header && (
+              <Link to={`/areas/${header.area_id}`} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white px-4 py-3 text-sm hover:bg-emerald-500">
+                Volver al área
+              </Link>
+            )}
+          </div>
         </div>
-        {header && (
-          <Link to={`/areas/${header.area_id}`} className={btnPrimary}>
-            Volver al área
-          </Link>
+
+        {msg && <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800">{msg}</div>}
+        {ok && <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800">{ok}</div>}
+
+        {/* Metadatos equipo */}
+        <form onSubmit={onPatch} className={card}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+            <div>
+              <div className="text-sm text-slate-600 mb-1">Nombre</div>
+              <input className={fieldBase} value={edit.nombre} onChange={(e) => setEdit((s) => ({ ...s, nombre: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600 mb-1">Estado</div>
+              <select className={fieldBase} value={edit.estado} onChange={(e) => setEdit((s) => ({ ...s, estado: e.target.value }))}>
+                <option value="ALMACEN">ALMACEN</option>
+                <option value="USO">USO</option>
+                <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+                <option value="BAJA">BAJA</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-sm text-slate-600 mb-1">Usuario final</div>
+              <input className={fieldBase} value={edit.usuario_final} onChange={(e) => setEdit((s) => ({ ...s, usuario_final: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600 mb-1">Login</div>
+              <input className={fieldBase} value={edit.login} onChange={(e) => setEdit((s) => ({ ...s, login: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600 mb-1">Password</div>
+              <input
+                type="password"
+                className={fieldBase}
+                value={edit.password}
+                onChange={(e) => setEdit((s) => ({ ...s, password: e.target.value }))}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="md:self-end">
+              <Button type="submit" variant="primary" className="w-full md:w-auto">Guardar cambios</Button>
+            </div>
+          </div>
+        </form>
+
+        {/* Aviso si no está en USO */}
+        {header && !isEnUso && (
+          <div className="p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-sm">
+            Para agregar ítems <b>en USO</b>, cambia el estado del equipo a <b>USO</b> y guarda.
+          </div>
         )}
-      </div>
 
-      {msg && <div className="p-3 rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200">{msg}</div>}
-      {ok && <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{ok}</div>}
-
-      {/* Metadatos equipo */}
-      <form onSubmit={onPatch} className={card + " p-4 md:p-5"}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Nombre</div>
-            <input className={field} value={edit.nombre} onChange={(e) => setEdit((s) => ({ ...s, nombre: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Estado</div>
-            <select
-              className={field}
-              value={edit.estado}
-              onChange={(e) => setEdit((s) => ({ ...s, estado: e.target.value }))}
-            >
-              <option value="ALMACEN">ALMACEN</option>
-              <option value="USO">USO</option>
-              <option value="MANTENIMIENTO">MANTENIMIENTO</option>
-              <option value="BAJA">BAJA</option>
-            </select>
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Usuario final</div>
-            <input className={field} value={edit.usuario_final} onChange={(e) => setEdit((s) => ({ ...s, usuario_final: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Login</div>
-            <input className={field} value={edit.login} onChange={(e) => setEdit((s) => ({ ...s, login: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Password</div>
-            <input
-              type="password"
-              className={field}
-              value={edit.password}
-              onChange={(e) => setEdit((s) => ({ ...s, password: e.target.value }))}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="md:self-end">
-            <button className={btnPrimary + " w-full md:w-auto"}>Guardar cambios</button>
+        {/* Acciones rápidas */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="text-lg font-semibold">Componentes & Periféricos asignados</div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setOpenAdd(true)} disabled={!header} title="Asignar ítems existentes en ALMACÉN">
+              📦 Agregar (ALMACÉN)
+            </Button>
+            {header && isEnUso && (
+              <Link
+                to={`/equipos/${header.equipo_id}/agregar-en-uso`}
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white px-4 py-3 text-sm hover:bg-emerald-500"
+                title="Crear y asignar nuevos ítems en USO a este equipo"
+              >
+                ➕ Agregar ítems (EN USO)
+              </Link>
+            )}
           </div>
         </div>
-      </form>
 
-      {/* Aviso si no está en USO */}
-      {header && !isEnUso && (
-        <div className="p-3 rounded-xl bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-sm">
-          Para agregar ítems <b>en USO</b>, cambia el estado del equipo a <b>USO</b> y guarda.
+        {/* Tablas asignados */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ItemsAsignados title="Componentes" rows={componentes} onRemove={onRemoveItem} loading={loading} />
+          <ItemsAsignados title="Periféricos" rows={perifericos} onRemove={onRemoveItem} loading={loading} />
         </div>
-      )}
 
-      {/* Acciones rápidas */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="text-lg font-semibold">Componentes & Periféricos asignados</div>
-        <div className="flex items-center gap-2">
-          <button
-            className={btn}
-            onClick={() => setOpenAdd(true)}
-            disabled={!header}
-            title="Asignar ítems existentes en ALMACÉN"
-          >
-            📦 Agregar (ALMACÉN)
-          </button>
-          {header && isEnUso && (
-            <Link
-              to={`/equipos/${header.equipo_id}/agregar-en-uso`}
-              className={btnPrimary}
-              title="Crear y asignar nuevos ítems en USO a este equipo"
-            >
-              ➕ Agregar ítems (EN USO)
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Tablas asignados */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ItemsAsignados title="Componentes" rows={componentes} onRemove={onRemoveItem} loading={loading} />
-        <ItemsAsignados title="Periféricos" rows={perifericos} onRemove={onRemoveItem} loading={loading} />
-      </div>
-
-      {/* Panel Agregar desde ALMACÉN */}
-      {openAdd && (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center p-3">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden">
-            <div className="px-4 py-3 border-b flex items-center justify-between">
-              <div className="font-semibold">Agregar ítems desde almacén</div>
-              <button className={btn} onClick={() => setOpenAdd(false)}>Cerrar</button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              {/* Tabs clase */}
-              <div className="flex gap-2">
-                {(["COMPONENTE", "PERIFERICO"] as const).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => {
-                      setAddClase(c);
-                      setAddFilter({ tipo: "", q: "" });
-                    }}
-                    className={`px-3 py-1.5 rounded-xl ${
-                      addClase === c ? "bg-slate-900 text-white" : "bg-white border border-slate-300"
-                    }`}
-                  >
-                    {c === "COMPONENTE" ? "Componentes" : "Periféricos"}
-                  </button>
-                ))}
+        {/* Panel Agregar desde ALMACÉN (modal) */}
+        {openAdd && (
+          <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center p-3">
+            <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="font-semibold">Agregar ítems desde almacén</div>
+                <Button variant="secondary" onClick={() => setOpenAdd(false)}><Icon name="close" /> Cerrar</Button>
               </div>
 
-              {/* Filtros */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="sm:col-span-2">
-                  <div className="text-xs text-slate-600 mb-1">Tipo</div>
-                  <select
-                    className={field}
-                    value={addFilter.tipo}
-                    onChange={(e) => setAddFilter((f) => ({ ...f, tipo: e.target.value }))}
-                  >
-                    <option value="">(Todos)</option>
-                    {addTypeOpts.map((t) => (
-                      <option key={`${t.clase}-${t.id}`} value={t.nombre}>
-                        {t.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="sm:col-span-2">
-                  <div className="text-xs text-slate-600 mb-1">Buscar (código)</div>
-                  <input
-                    className={field}
-                    placeholder="Ej. PC-001"
-                    value={addFilter.q}
-                    onChange={(e) => setAddFilter((f) => ({ ...f, q: e.target.value }))}
-                  />
-                </div>
-                <div className="sm:col-span-4">
-                  <button
-                    className={btn}
-                    onClick={() => loadDisponibles(1, addPage.size)}
-                    disabled={!areaId}
-                  >
-                    Aplicar filtros
-                  </button>
-                </div>
-              </div>
-
-              {/* Tabla disponibles */}
-              <div className={card + " overflow-hidden"}>
-                <div className="overflow-auto max-h-[50vh]">
-                  <table className="min-w-full table-auto">
-                    <thead className="bg-slate-50 sticky top-0 z-10">
-                      <tr className="text-left text-sm text-slate-600">
-                        <th className="px-3 py-2">Código</th>
-                        <th className="px-3 py-2">Tipo</th>
-                        <th className="px-3 py-2">Ingresó</th>
-                        <th className="px-3 py-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {addPage.items.map((r) => (
-                        <tr key={r.item_id} className="border-t">
-                          <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
-                          <td className="px-3 py-2">{r.tipo}</td>
-                          <td className="px-3 py-2">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
-                          <td className="px-3 py-2 text-right">
-                            <button className={btnPrimary} onClick={() => onAddItem(r)}>
-                              Agregar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {addPage.items.length === 0 && (
-                        <tr>
-                          <td className="px-3 py-6" colSpan={4}>
-                            <EmptyState
-                              title="No hay ítems disponibles"
-                              desc="Ajusta los filtros o cambia la clase para revisar otros ítems."
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Paginación */}
-                <div className="flex items-center justify-between p-3 border-t">
-                  <div className="text-sm text-slate-600">
-                    Total: {addPage.total} · Página {addPage.page}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      className={field + " py-1 w-36"}
-                      value={addPage.size}
-                      onChange={async (e) => {
-                        const s = Number(e.target.value);
-                        await loadDisponibles(1, s);
-                      }}
+              <div className="p-4 space-y-4">
+                {/* Tabs clase */}
+                <div className="inline-flex rounded-xl overflow-hidden ring-1 ring-slate-200">
+                  {(["COMPONENTE", "PERIFERICO"] as const).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => { setAddClase(c); setAddFilter({ tipo: "", q: "" }); }}
+                      className={`px-4 py-2 text-sm ${addClase === c ? "bg-emerald-600 text-white" : "bg-white hover:bg-slate-50"}`}
                     >
-                      {[10, 20, 50].map((n) => (
-                        <option key={n} value={n}>
-                          {n} por página
+                      {c === "COMPONENTE" ? "Componentes" : "Periféricos"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filtros */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="sm:col-span-2">
+                    <div className="text-sm text-slate-600 mb-1">Tipo</div>
+                    <select
+                      className={fieldBase}
+                      value={addFilter.tipo}
+                      onChange={(e) => setAddFilter((f) => ({ ...f, tipo: e.target.value }))}
+                    >
+                      <option value="">(Todos)</option>
+                      {addTypeOpts.map((t) => (
+                        <option key={`${t.clase}-${t.id}`} value={t.nombre}>
+                          {t.nombre}
                         </option>
                       ))}
                     </select>
-                    <button
-                      className={btn}
-                      disabled={addPage.page <= 1}
-                      onClick={() => loadDisponibles(addPage.page - 1, addPage.size)}
-                    >
-                      ◀
-                    </button>
-                    <button
-                      className={btn}
-                      disabled={addPage.page * addPage.size >= addPage.total}
-                      onClick={() => loadDisponibles(addPage.page + 1, addPage.size)}
-                    >
-                      ▶
-                    </button>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <div className="text-sm text-slate-600 mb-1">Buscar (código)</div>
+                    <input
+                      className={fieldBase}
+                      placeholder="Ej. PC-001"
+                      value={addFilter.q}
+                      onChange={(e) => setAddFilter((f) => ({ ...f, q: e.target.value }))}
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <Button variant="secondary" onClick={() => loadDisponibles(1, addPage.size)} disabled={!areaId}>
+                      Aplicar filtros
+                    </Button>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end">
-                <button className={btn} onClick={() => setOpenAdd(false)}>
-                  Cerrar
-                </button>
+                {/* Tabla disponibles */}
+                <div className={section + " overflow-hidden"}>
+                  <div className="overflow-auto max-h-[50vh]">
+                    <table className="min-w-full table-auto">
+                      <thead className="bg-slate-50 sticky top-0 z-10">
+                        <tr className="text-left text-sm text-slate-600">
+                          <th className="px-3 py-2">Código</th>
+                          <th className="px-3 py-2">Tipo</th>
+                          <th className="px-3 py-2">Ingresó</th>
+                          <th className="px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {addPage.items.map((r) => (
+                          <tr key={r.item_id} className="border-t">
+                            <td className="px-3 py-2 font-mono">{r.item_codigo}</td>
+                            <td className="px-3 py-2">{r.tipo}</td>
+                            <td className="px-3 py-2">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                            <td className="px-3 py-2 text-right">
+                              <Button variant="primary" onClick={() => onAddItem(r)}>
+                                Agregar
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                        {addPage.items.length === 0 && (
+                          <tr>
+                            <td className="px-3 py-6" colSpan={4}>
+                              <EmptyState
+                                title="No hay ítems disponibles"
+                                desc="Ajusta los filtros o cambia la clase para revisar otros ítems."
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Paginación */}
+                  <div className="flex items-center justify-between p-3 border-t border-slate-200">
+                    <div className={`${MUTED} text-sm`}>
+                      Total: {addPage.total} · Página {addPage.page}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        className={fieldBase + " py-2 w-36"}
+                        value={addPage.size}
+                        onChange={async (e) => {
+                          const s = Number(e.target.value);
+                          await loadDisponibles(1, s);
+                        }}
+                      >
+                        {[10, 20, 50].map((n) => (
+                          <option key={n} value={n}>
+                            {n} por página
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        variant="secondary"
+                        disabled={addPage.page <= 1}
+                        onClick={() => loadDisponibles(addPage.page - 1, addPage.size)}
+                      >
+                        <Icon name="chevL" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={addPage.page * addPage.size >= addPage.total}
+                        onClick={() => loadDisponibles(addPage.page + 1, addPage.size)}
+                      >
+                        <Icon name="chevR" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button variant="secondary" onClick={() => setOpenAdd(false)}>
+                    Cerrar
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {loading && <div className="text-sm text-slate-500">Cargando…</div>}
+        {loading && <div className="text-sm text-slate-500">Cargando…</div>}
+      </div>
     </div>
   );
 }
 
-/* ---------- Auxiliar: tabla asignados ---------- */
+/* ------------------------ Auxiliar: tabla asignados ------------------------ */
 function ItemsAsignados({
   title,
   rows,
@@ -525,8 +562,8 @@ function ItemsAsignados({
   loading?: boolean;
 }) {
   return (
-    <div className={card}>
-      <div className="p-3 border-b">
+    <div className={section}>
+      <div className="p-3 border-b border-slate-200">
         <div className="font-semibold">{title}</div>
       </div>
       <div className="overflow-x-auto">
@@ -555,7 +592,7 @@ function ItemsAsignados({
                     <div className="flex items-center gap-2 justify-end">
                       <Link
                         to={`/items/${r.item_id}`}
-                        className={btnPrimary}
+                        className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm hover:bg-emerald-500"
                         title="Ver ficha técnica"
                       >
                         Ver ficha
@@ -573,10 +610,7 @@ function ItemsAsignados({
             {!loading && rows.length === 0 && (
               <tr>
                 <td className="px-3 py-6" colSpan={4}>
-                  <EmptyState
-                    title="Sin registros"
-                    desc="Aún no hay ítems asignados a este equipo."
-                  />
+                  <EmptyState title="Sin registros" desc="Aún no hay ítems asignados a este equipo." />
                 </td>
               </tr>
             )}

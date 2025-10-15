@@ -9,6 +9,26 @@ bp = Blueprint("item_media", __name__, url_prefix="/api/items")
 
 ALLOWED = {"png", "jpg", "jpeg", "webp", "gif"}
 
+
+def _uploads_dir() -> str:
+    """Devuelve la carpeta de uploads dentro de instance/"""
+    updir = os.path.join(current_app.instance_path, "uploads")
+    os.makedirs(updir, exist_ok=True)
+    return updir
+
+
+def _fs_path_from_public(rel_path: str) -> str | None:
+    """
+    Convierte '/uploads/archivo.jpg' -> '<instance>/uploads/archivo.jpg'
+    Si la ruta no empieza con /uploads/, devuelve None.
+    """
+    rel_path = rel_path.strip()
+    if not rel_path.startswith("/uploads/"):
+        return None
+    filename = rel_path[len("/uploads/") :]
+    return os.path.join(_uploads_dir(), filename)
+
+
 @bp.post("/<int:item_id>/media")
 @require_auth
 def upload_item_media(item_id: int):
@@ -22,10 +42,9 @@ def upload_item_media(item_id: int):
     if not files:
         return {"error": "Sin archivos"}, 400
 
-    updir = os.path.join(current_app.instance_path, "uploads")
-    os.makedirs(updir, exist_ok=True)
+    updir = _uploads_dir()
+    saved: list[str] = []
 
-    saved = []
     for f in files:
         # Validar extensión
         ext = (f.filename.rsplit(".", 1)[-1] or "").lower()
@@ -34,9 +53,7 @@ def upload_item_media(item_id: int):
 
         # Nombre seguro y único
         srcname = f.filename or f"img.{ext}"
-        fname = secure_filename(srcname)
-        if not fname:
-            fname = f"img.{ext}"
+        fname = secure_filename(srcname) or f"img.{ext}"
         path_fs = os.path.join(updir, fname)
         base, ex = os.path.splitext(fname)
         i = 1
@@ -48,7 +65,7 @@ def upload_item_media(item_id: int):
         # Guardar a disco
         f.save(path_fs)
 
-        # Ruta pública (sirve /uploads desde instance/)
+        # Ruta pública servida por /uploads/<fname>
         rel = f"/uploads/{fname}"
 
         # Registrar en BD
@@ -72,6 +89,7 @@ def upload_item_media(item_id: int):
 def remove_item_media(item_id: int):
     """
     Elimina una imagen del item. Acepta 'path' por query o JSON body.
+    También intenta eliminar el archivo físico si corresponde.
     """
     path = (request.args.get("path") or "").strip()
     if not path:
@@ -83,4 +101,14 @@ def remove_item_media(item_id: int):
     err = delete_media(request.claims["username"], item_id, path)
     if err:
         return {"error": err}, 400
-    return {"ok": True}
+
+    # Eliminar del sistema de archivos si es un /uploads/*
+    file_fs = _fs_path_from_public(path)
+    if file_fs and os.path.exists(file_fs):
+        try:
+            os.remove(file_fs)
+        except Exception:
+            # No rompemos la respuesta si falla borrar el archivo físico
+            current_app.logger.warning("No se pudo eliminar archivo en disco: %s", file_fs)
+
+    return {"ok": True}, 200

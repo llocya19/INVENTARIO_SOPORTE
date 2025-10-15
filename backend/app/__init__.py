@@ -16,6 +16,10 @@ def create_app():
     from app.routes.media_routes import bp as media_bp
     from app.routes.equipos_routes import bp as equipos_bp
     from app.routes.mov_routes import bp as movimientos_bp
+    from app.routes.incidencias_routes import bp as incidencias_bp
+    from app.routes.profile_routes import bp as profile_bp
+    from app.routes.debug_mail_routes import bp as debug_mail_bp
+
     app.register_blueprint(spec_bp)
     app.register_blueprint(media_bp)
 
@@ -26,6 +30,9 @@ def create_app():
     app.register_blueprint(areas_bp)
     app.register_blueprint(equipos_bp)
     app.register_blueprint(movimientos_bp)
+    app.register_blueprint(incidencias_bp)
+    app.register_blueprint(profile_bp)
+    app.register_blueprint(debug_mail_bp)
 
 
 

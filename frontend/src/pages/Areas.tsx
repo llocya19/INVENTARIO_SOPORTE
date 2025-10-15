@@ -15,22 +15,51 @@ type AreaInfo = {
 };
 
 /* =========================
-   UI helpers
+   Tema Hospital – Crema + Blanco (Tailwind)
 ========================= */
-const card = "bg-white rounded-2xl shadow-sm ring-1 ring-slate-200";
-const fieldBase =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/30 focus:border-slate-400 transition";
-const btnBase =
-  "inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 active:bg-slate-100 transition";
-const btnPrimary =
-  "inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 text-sm shadow-sm hover:opacity-95 active:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed";
+const BG_APP   = "bg-[#FFFDF8]"; // crema institucional
+const TEXT     = "text-slate-800";
+const MUTED    = "text-slate-600";
 
+// Contenedores
+const section  = "rounded-2xl border border-slate-200 bg-white shadow-sm";
+const card     = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
+
+// Tipografía/espaciado base
+const baseText = "leading-relaxed tracking-[0.01em]";
+
+// Controles (accesibles)
+const focusRing =
+  "focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:border-emerald-300/60";
+const fieldBase =
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-base " +
+  "placeholder-slate-400 " + TEXT + " " + focusRing + " transition";
+
+// Botones (mín 44px alto)
+const btnBase =
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 " +
+  "text-base " + TEXT + " hover:bg-slate-50 active:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed " +
+  "min-h-[44px] min-w-[88px]";
+
+const btnPrimary =
+  "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base " +
+  "bg-emerald-600 text-white font-medium hover:bg-emerald-500 active:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed " +
+  "min-h-[44px] min-w-[112px]";
+
+const btnAccent =
+  "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base " +
+  "bg-sky-600 text-white font-medium hover:bg-sky-500 active:bg-sky-700 transition disabled:opacity-50 disabled:cursor-not-allowed " +
+  "min-h-[44px] min-w-[112px]";
+
+// Badges jerarquía
 function Badge({ kind }: { kind: "root" | "child" }) {
   return (
     <span
       className={
-        "text-[11px] px-2 py-0.5 rounded-full " +
-        (kind === "root" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700")
+        "text-xs px-2 py-0.5 rounded-full ring-1 " +
+        (kind === "root"
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+          : "bg-sky-50 text-sky-700 ring-sky-100")
       }
     >
       {kind === "root" ? "Raíz" : "Subárea"}
@@ -38,14 +67,15 @@ function Badge({ kind }: { kind: "root" | "child" }) {
   );
 }
 
+// Skeleton
 function SkeletonCard() {
   return (
-    <div className={card + " p-4 animate-pulse"}>
-      <div className="h-5 w-1/2 bg-slate-200 rounded mb-2" />
-      <div className="h-4 w-24 bg-slate-200 rounded mb-4" />
+    <div className={card + " animate-pulse"}>
+      <div className="h-5 w-2/3 bg-slate-200 rounded mb-2" />
+      <div className="h-4 w-28 bg-slate-200 rounded mb-4" />
       <div className="flex gap-2">
-        <div className="h-8 w-20 bg-slate-200 rounded" />
-        <div className="h-8 w-20 bg-slate-200 rounded" />
+        <div className="h-10 w-24 bg-slate-200 rounded" />
+        <div className="h-10 w-24 bg-slate-200 rounded" />
       </div>
     </div>
   );
@@ -66,13 +96,14 @@ export default function Areas() {
   // forms
   const [rootForm, setRootForm] = useState({ nombre: "" });
 
-  // subárea: ahora con selección por raíz
+  // subárea
   const [subForm,  setSubForm]  = useState({ nombre: "", padre_id: "" });
-  const [subRootId, setSubRootId] = useState<string>(""); // nueva: raíz para filtrar padres
+  const [subRootId, setSubRootId] = useState<string>("");
 
   // UI
   const [q, setQ] = useState<string>("");
   const [showForms, setShowForms] = useState<boolean>(true);
+  const [onlyRoots, setOnlyRoots] = useState<boolean>(false);
 
   // modal info
   const [showInfo, setShowInfo] = useState(false);
@@ -80,7 +111,7 @@ export default function Areas() {
 
   // paginación principal
   const [page, setPage] = useState<number>(1);
-  const [size, setSize] = useState<number>(9); // 3x3 por defecto
+  const [size, setSize] = useState<number>(9);
 
   // paginación subáreas (modal)
   const [subPage, setSubPage] = useState<number>(1);
@@ -107,17 +138,13 @@ export default function Areas() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(a);
     }
-    // orden alfabético leve
-    for (const arr of map.values()) {
-      arr.sort((x,y)=> x.nombre.localeCompare(y.nombre));
-    }
+    for (const arr of map.values()) arr.sort((x,y)=> x.nombre.localeCompare(y.nombre));
     return map;
   }, [areas]);
 
   const roots = useMemo(() => (byParent.get(null) || []), [byParent]);
 
   function getDescendantsFlatten(rootId: number) {
-    // devuelve [{id, nombre, depth}] de root y todos sus descendientes
     const result: {id:number; nombre:string; depth:number}[] = [];
     function walk(id:number, depth:number) {
       const self = areas.find(a=>a.id===id);
@@ -134,15 +161,15 @@ export default function Areas() {
     e.preventDefault();
     setMsg(null); setOk(null);
     const nombre = rootForm.nombre.trim();
-    if (!nombre) { setMsg("Nombre requerido"); return; }
+    if (!nombre) { setMsg("El nombre del área es obligatorio."); return; }
     try{
       await http.post("/api/areas/root", { nombre });
-      setOk(`Área raíz "${nombre}" creada`);
+      setOk(`Área raíz “${nombre}” creada correctamente.`);
       setRootForm({ nombre: "" });
       setPage(1);
       load();
     }catch(e:any){
-      setMsg(e?.response?.data?.error || "No se pudo crear el área raíz");
+      setMsg(e?.response?.data?.error || "No se pudo crear el área raíz.");
     }
   }
 
@@ -152,18 +179,18 @@ export default function Areas() {
     setMsg(null); setOk(null);
     const nombre = subForm.nombre.trim();
     const padre_id = Number(subForm.padre_id);
+    if (!subRootId) { setMsg("Primero elige el área raíz."); return; }
     if (!nombre || !padre_id) {
-      setMsg("Completa nombre y padre"); return;
+      setMsg("Completa el nombre y el padre de la subárea."); return;
     }
     try{
       await http.post("/api/areas/sub", { nombre, padre_id });
-      setOk(`Subárea "${nombre}" creada`);
+      setOk(`Subárea “${nombre}” creada correctamente.`);
       setSubForm({ nombre: "", padre_id: "" });
-      // mantener la raíz elegida para seguir creando dentro de la misma rama
       setPage(1);
       load();
     }catch(e:any){
-      setMsg(e?.response?.data?.error || "No se pudo crear la subárea");
+      setMsg(e?.response?.data?.error || "No se pudo crear la subárea.");
     }
   }
 
@@ -174,19 +201,18 @@ export default function Areas() {
       const r = await http.get<AreaInfo>(`/api/areas/${id}/info`);
       setInfo(r.data);
     }catch(e:any){
-      setMsg(e?.response?.data?.error || "No se pudo obtener la info");
+      setMsg(e?.response?.data?.error || "No se pudo obtener la información del área.");
     }
   }
 
-  // filtro + paginación (client-side)
+  // filtro + paginación
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return areas;
-    return areas.filter(a =>
-      a.nombre.toLowerCase().includes(term) ||
-      String(a.id).includes(term)
-    );
-  }, [areas, q]);
+    let base = areas;
+    if (term) base = base.filter(a => a.nombre.toLowerCase().includes(term) || String(a.id).includes(term));
+    if (onlyRoots) base = base.filter(a => a.padre_id === null);
+    return base;
+  }, [areas, q, onlyRoots]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(filtered.length / size)),
@@ -210,10 +236,9 @@ export default function Areas() {
     return all.slice(start, start + subSize);
   }, [info?.children, subPage, subSize]);
 
-  // reset de página al cambiar búsqueda o tamaño
-  useEffect(() => { setPage(1); }, [q, size]);
+  useEffect(() => { setPage(1); }, [q, size, onlyRoots]);
 
-  // al cambiar la raíz elegida para subáreas, si el padre actual ya no pertenece, lo limpiamos
+  // coherencia raíz ↔ padre
   useEffect(() => {
     if (!subRootId) return;
     const rid = Number(subRootId);
@@ -221,93 +246,121 @@ export default function Areas() {
     if (subForm.padre_id && !allowed.has(Number(subForm.padre_id))) {
       setSubForm(s => ({ ...s, padre_id: "" }));
     }
-  }, [subRootId, areas]); // areas por si recargan
+  }, [subRootId, areas]); // si cambian áreas, recalcular
 
-  // si el usuario selecciona manualmente un padre desde otra parte, autoselecciona su raíz
   useEffect(() => {
     if (!subForm.padre_id) return;
     const pid = Number(subForm.padre_id);
-    // encontramos la raíz ascendiendo por padre_id
     let cur = areas.find(a=>a.id===pid) || null;
-    while (cur && cur.padre_id !== null) {
-      cur = areas.find(a=>a.id===cur!.padre_id) || null;
-    }
-    if (cur && String(cur.id) !== subRootId) {
-      setSubRootId(String(cur.id));
-    }
-  }, [subForm.padre_id, areas]); // autoderivar raíz
+    while (cur && cur.padre_id !== null) cur = areas.find(a=>a.id===cur!.padre_id) || null;
+    if (cur && String(cur.id) !== subRootId) setSubRootId(String(cur.id));
+  }, [subForm.padre_id, areas]);
 
-  // opciones para "Padre" basado en la raíz elegida
   const padreOptions = useMemo(() => {
     if (!subRootId) return [] as {id:number; nombre:string; depth:number}[];
     return getDescendantsFlatten(Number(subRootId));
   }, [subRootId, areas]);
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="space-y-1">
-          <h1 className="text-xl md:text-2xl font-semibold">Áreas</h1>
-          <div className="text-sm text-slate-500">
-            {filtered.length} {filtered.length === 1 ? "área" : "áreas"} · página {page} de {totalPages}
+    <div className={`${BG_APP} ${TEXT} min-h-[calc(100vh-64px)]`}>
+      <div className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-5 space-y-5">
+        {/* Header */}
+        <div className={`${section} px-4 py-4 md:px-6 md:py-5`}>
+          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+            <div className="space-y-1">
+              <h1 className={"text-[22px] md:text-[26px] font-semibold " + baseText}>
+                Áreas del Hospital <span className="text-emerald-600">•</span>{" "}
+                <span className="font-normal text-slate-500">Soporte TI</span>
+              </h1>
+              <div className={`${MUTED} text-sm`}>
+                {filtered.length} {filtered.length === 1 ? "área" : "áreas"} · página {page} de {totalPages}
+              </div>
+            </div>
+
+            {/* Búsqueda + filtro */}
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+              <div className="flex gap-2">
+                <input
+                  className={fieldBase + " w-full"}
+                  placeholder="Buscar servicio, ambiente o ID…"
+                  value={q}
+                  onChange={(e)=>setQ(e.target.value)}
+                  aria-label="Buscar áreas"
+                />
+                <button className={btnBase + " px-4"} onClick={()=>setQ("")} disabled={!q}>
+                  Limpiar
+                </button>
+              </div>
+              <button
+                className={
+                  "rounded-xl px-4 py-3 text-base border " +
+                  (onlyRoots
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-slate-300 bg-white hover:bg-slate-50")
+                }
+                onClick={()=>setOnlyRoots(v=>!v)}
+                title="Mostrar solo áreas raíz"
+              >
+                Solo raíces
+              </button>
+            </div>
           </div>
         </div>
-        <div className="w-full sm:w-auto flex items-center gap-2">
-          <input
-            className={fieldBase + " w-full sm:w-64"}
-            placeholder="Buscar por nombre o ID…"
-            value={q}
-            onChange={(e)=>setQ(e.target.value)}
-          />
-          <button className={btnBase} onClick={()=>setQ("")} disabled={!q}>Limpiar</button>
-        </div>
-      </div>
 
-      {msg && <div className="p-3 rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-200">{msg}</div>}
-      {ok  && <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{ok}</div>}
+        {/* Mensajes */}
+        {msg && (
+          <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800">
+            {msg}
+          </div>
+        )}
+        {ok && (
+          <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800">
+            {ok}
+          </div>
+        )}
 
-      {/* ADMIN: acordeón de creación */}
-      {isAdmin && (
-        <div className={card}>
-          <button
-            className="w-full flex items-center justify-between px-4 py-3"
-            onClick={()=>setShowForms(s => !s)}
-          >
-            <span className="font-medium">Crear áreas</span>
-            <span className="text-slate-500 text-sm">{showForms ? "Ocultar" : "Mostrar"}</span>
-          </button>
-          {showForms && (
-            <div className="border-t grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
-              {/* raíz */}
-              <form onSubmit={createRoot} className="p-4 rounded-2xl ring-1 ring-slate-200">
-                <div className="text-base font-medium mb-3">Área raíz</div>
-                <div className="grid gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600 mb-1">Nombre</div>
+        {/* ADMIN: acordeón */}
+        {isAdmin && (
+          <div className={section}>
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 md:px-5"
+              onClick={()=>setShowForms(s => !s)}
+              aria-expanded={showForms}
+            >
+              <span className="font-medium">Crear áreas</span>
+              <span className={MUTED + " text-sm"}>{showForms ? "Ocultar" : "Mostrar"}</span>
+            </button>
+
+            {showForms && (
+              <div className="border-t border-slate-200 grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 md:p-5">
+                {/* raíz */}
+                <form onSubmit={createRoot} className={card + " " + baseText}>
+                  <div className="text-base font-medium mb-2">Área raíz (Servicio)</div>
+                  <label className="block text-sm text-slate-600">
+                    Nombre del servicio
                     <input
-                      className={fieldBase}
-                      placeholder='Ej. "Soporte"'
+                      className={fieldBase + " mt-1"}
+                      placeholder='Ej. "Emergencia", "UCI", "Farmacia"'
                       value={rootForm.nombre}
                       onChange={e=>setRootForm({ nombre: e.target.value })}
                     />
+                  </label>
+                  <p className="text-[12px] text-slate-500 mt-1">
+                    Usa el nombre oficial del servicio.
+                  </p>
+                  <div className="mt-3">
+                    <button className={btnPrimary + " w-full sm:w-auto"}>Crear servicio</button>
                   </div>
-                </div>
-                <div className="mt-3">
-                  <button className={btnPrimary}>Crear área raíz</button>
-                </div>
-              </form>
+                </form>
 
-              {/* subárea */}
-              <form onSubmit={createSub} className="p-4 rounded-2xl ring-1 ring-slate-200">
-                <div className="text-base font-medium mb-3">Subárea</div>
+                {/* subárea */}
+                <form onSubmit={createSub} className={card + " " + baseText}>
+                  <div className="text-base font-medium mb-2">Subárea (Ambiente/Unidad)</div>
 
-                {/* Paso 1: Seleccionar raíz */}
-                <div className="grid gap-3">
-                  <div>
-                    <div className="text-xs text-slate-600 mb-1">Área raíz</div>
+                  <label className="block text-sm text-slate-600">
+                    Servicio raíz
                     <select
-                      className={fieldBase}
+                      className={fieldBase + " mt-1"}
                       value={subRootId}
                       onChange={(e)=> setSubRootId(e.target.value)}
                     >
@@ -318,238 +371,237 @@ export default function Areas() {
                         </option>
                       ))}
                     </select>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Primero elige la raíz; luego podrás escoger el padre dentro de esa rama.
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    <label className="block text-sm text-slate-600">
+                      Nombre de la subárea
+                      <input
+                        className={fieldBase + " mt-1"}
+                        placeholder='Ej. "Sala de Procedimientos", "Hospitalización A"'
+                        value={subForm.nombre}
+                        onChange={e=>setSubForm({ ...subForm, nombre: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="block text-sm text-slate-600">
+                      Padre dentro del servicio
+                      <select
+                        className={fieldBase + " mt-1"}
+                        value={subForm.padre_id}
+                        onChange={e=>setSubForm({ ...subForm, padre_id: e.target.value })}
+                        disabled={!subRootId}
+                      >
+                        <option value="">{subRootId ? "Seleccione…" : "Elige un servicio primero"}</option>
+                        {padreOptions.map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {`${"— ".repeat(opt.depth)}${opt.nombre}`} {opt.depth===0 ? "(servicio)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {/* Vista árbol */}
+                  {subRootId && (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="text-sm text-slate-600 mb-2">Estructura del servicio</div>
+                      <ul className="space-y-1 text-[15px] text-slate-800 max-h-44 overflow-auto">
+                        {padreOptions.map(opt => (
+                          <li key={`tree-${opt.id}`}>
+                            <span className={opt.depth===0 ? "font-medium text-emerald-700" : ""}>
+                              {`${"— ".repeat(opt.depth)}${opt.nombre}`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Paso 2: Datos subárea + Padre dentro de esa raíz */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <div className="text-xs text-slate-600 mb-1">Nombre</div>
-                    <input
-                      className={fieldBase}
-                      placeholder='Ej. "Laboratorio"'
-                      value={subForm.nombre}
-                      onChange={e=>setSubForm({ ...subForm, nombre: e.target.value })}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-slate-600 mb-1">Padre</div>
-                    <select
-                      className={fieldBase}
-                      value={subForm.padre_id}
-                      onChange={e=>setSubForm({ ...subForm, padre_id: e.target.value })}
-                      disabled={!subRootId}
+                  <div className="mt-3">
+                    <button
+                      className={btnAccent + " w-full sm:w-auto"}
+                      disabled={!subForm.nombre.trim() || !subForm.padre_id}
                     >
-                      <option value="">{subRootId ? "Seleccione…" : "Elige una raíz primero"}</option>
-                      {padreOptions.map(opt => (
-                        <option key={opt.id} value={opt.id}>
-                          {`${"— ".repeat(opt.depth)}${opt.nombre}`} {opt.depth===0 ? "(raíz)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Solo se muestran la raíz seleccionada y sus subáreas.
+                      Crear subárea
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Grid de áreas (sin truncar, auto-fit) */}
+        <div className="space-y-4">
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+            {loading && Array.from({ length: 8 }).map((_,i)=> <SkeletonCard key={i} />)}
+
+            {!loading && pageItems.map(a => (
+              <div key={a.id} className={card + " " + baseText}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold flex items-center gap-2 whitespace-normal break-words">
+                      <span className="whitespace-normal break-words">
+                        {a.nombre}
+                      </span>
+                      <Badge kind={a.padre_id ? "child" : "root"} />
                     </div>
+                    <div className="text-sm text-slate-500 mt-1">ID {a.id}</div>
                   </div>
-                </div>
 
-                {/* Vista rápida de la rama seleccionada */}
-                {subRootId && (
-                  <div className="mt-3 rounded-xl bg-slate-50 p-3">
-                    <div className="text-xs text-slate-600 mb-2">Estructura de la raíz seleccionada</div>
-                    <ul className="space-y-1 text-sm text-slate-700">
-                      {padreOptions.map(opt => (
-                        <li key={`tree-${opt.id}`} className="font-normal">
-                          <span className={opt.depth===0 ? "font-medium" : ""}>
-                            {`${"— ".repeat(opt.depth)}${opt.nombre}`}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <button
+                      onClick={()=>openInfo(a.id)}
+                      className={btnBase}
+                      title="Ver información del área"
+                    >
+                      Info
+                    </button>
+                    <Link
+                      to={`/areas/${a.id}`}
+                      className={btnPrimary}
+                      title="Abrir área"
+                    >
+                      Abrir
+                    </Link>
                   </div>
-                )}
-
-                <div className="mt-4">
-                  <button className={btnPrimary} disabled={!subForm.nombre.trim() || !subForm.padre_id}>
-                    Crear subárea
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Grid de áreas (paginada) */}
-      <div className="space-y-3">
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {loading && Array.from({ length: 6 }).map((_,i)=> <SkeletonCard key={i} />)}
-          {!loading && pageItems.map(a => (
-            <div key={a.id} className={card + " p-4"}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-semibold flex items-center gap-2">
-                    {a.nombre}
-                    <Badge kind={a.padre_id ? "child" : "root"} />
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5">ID {a.id}</div>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={()=>openInfo(a.id)}
-                    className={btnBase}
-                    title="Ver información"
-                  >
-                    Info
-                  </button>
-                  <Link
-                    to={`/areas/${a.id}`}
-                    className={btnPrimary}
-                    title="Abrir área"
-                  >
-                    Abrir
-                  </Link>
                 </div>
               </div>
-            </div>
-          ))}
-          {!loading && filtered.length===0 && (
-            <div className={card + " p-8 col-span-full"}>
-              <div className="text-center">
-                <div className="text-slate-600">No hay áreas que coincidan</div>
+            ))}
+
+            {!loading && filtered.length===0 && (
+              <div className={section + " p-10 col-span-full text-center"}>
+                <div className="text-slate-700 text-base md:text-lg">No hay áreas que coincidan</div>
                 {q && <div className="text-sm text-slate-500 mt-1">Prueba limpiar la búsqueda o revisa la ortografía.</div>}
               </div>
+            )}
+          </div>
+
+          {/* Paginación */}
+          {!loading && filtered.length > 0 && (
+            <div className={`${section} p-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center ${baseText}`}>
+              <div className="text-slate-600">
+                Mostrando {(page - 1) * size + 1}–{Math.min(page * size, filtered.length)} de {filtered.length}
+              </div>
+              <div className="flex flex-wrap gap-2 items-center justify-start sm:justify-end">
+                <button className={btnBase} disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+                  ◀ Anterior
+                </button>
+                <span className="text-slate-700 px-2">Página {page} / {totalPages}</span>
+                <button className={btnBase} disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
+                  Siguiente ▶
+                </button>
+                <select
+                  className={fieldBase + " w-28"}
+                  value={size}
+                  onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }}
+                  aria-label="Tamaño de página"
+                >
+                  {[8, 12, 16, 20].map(n => <option key={n} value={n}>{n} / pág</option>)}
+                </select>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Paginación principal */}
-        {!loading && filtered.length > 0 && (
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm text-slate-600">
-              Mostrando {(page - 1) * size + 1}–{Math.min(page * size, filtered.length)} de {filtered.length}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                className={btnBase}
-                disabled={page <= 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-              >
-                ◀
-              </button>
-              <span className="text-sm">Página {page} / {totalPages}</span>
-              <button
-                className={btnBase}
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              >
-                ▶
-              </button>
-              <select
-                className={fieldBase + " w-28 py-1"}
-                value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }}
-              >
-                {[6, 9, 12, 18].map(n => <option key={n} value={n}>{n} / pág</option>)}
-              </select>
+        {/* Modal Info */}
+        {showInfo && (
+          <div className="fixed inset-0 bg-black/10 backdrop-blur-[1px] flex items-center justify-center p-4 z-50">
+            <div className={section + " w-full max-w-[760px]"}>
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="font-semibold text-base md:text-lg">Información del área</div>
+                <button onClick={()=>setShowInfo(false)} className={btnBase}>Cerrar</button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {!info ? (
+                  <div className="text-slate-600">Cargando…</div>
+                ) : (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className={card + " " + baseText}>
+                        <div className="text-sm text-slate-600">Área</div>
+                        <div className="mt-1 font-medium flex items-center gap-2 whitespace-normal break-words">
+                          <span className="whitespace-normal break-words">{info.area.nombre}</span>
+                          <span className="text-xs text-slate-500">ID {info.area.id}</span>
+                          <Badge kind={info.area.padre_id ? "child" : "root"} />
+                        </div>
+                      </div>
+
+                      <div className={card + " " + baseText}>
+                        <div className="text-sm text-slate-600">Jerarquía (ancestros)</div>
+                        {info.ancestors.length === 0 ? (
+                          <div className="text-slate-700 mt-1">— Es servicio raíz —</div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            {info.ancestors.map((p, i) => (
+                              <span key={p.id} className="inline-flex items-center gap-1">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-50 text-slate-800 text-xs border border-slate-200">
+                                  {p.nombre}
+                                </span>
+                                {i < info.ancestors.length - 1 && <span className="text-slate-400">›</span>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className={card + " " + baseText}>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                        <div className="text-sm text-slate-600">Subáreas directas</div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className={btnBase}
+                            disabled={subPage <= 1}
+                            onClick={() => setSubPage(p => Math.max(1, p - 1))}
+                          >
+                            ◀
+                          </button>
+                          <span className="text-sm text-slate-600">
+                            Página {subPage} / {subTotalPages}
+                          </span>
+                          <button
+                            className={btnBase}
+                            disabled={subPage >= subTotalPages}
+                            onClick={() => setSubPage(p => Math.min(subTotalPages, p + 1))}
+                          >
+                            ▶
+                          </button>
+                          <select
+                            className={fieldBase + " w-24"}
+                            value={subSize}
+                            onChange={(e) => { setSubSize(Number(e.target.value)); setSubPage(1); }}
+                          >
+                            {[4, 8, 12, 16].map(n => <option key={n} value={n}>{n} / pág</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      {info.children.length === 0 ? (
+                        <div className="text-slate-700">— Sin subáreas —</div>
+                      ) : (
+                        <ul className="grid sm:grid-cols-2 gap-2">
+                          {subPageItems.map(c => (
+                            <li
+                              key={c.id}
+                              className="flex items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <div className="whitespace-normal break-words">{c.nombre}</div>
+                              <span className="text-xs text-slate-500 shrink-0">ID {c.id}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
       </div>
-
-      {/* Modal Info */}
-      {showInfo && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-[min(96vw,720px)]">
-            <div className="px-4 py-3 border-b flex items-center justify-between">
-              <div className="font-semibold">Información del área</div>
-              <button onClick={()=>setShowInfo(false)} className={btnBase}>Cerrar</button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              {!info ? (
-                <div className="text-slate-500">Cargando…</div>
-              ) : (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl ring-1 ring-slate-200 p-3">
-                      <div className="text-xs text-slate-600">Área</div>
-                      <div className="font-medium flex items-center gap-2">
-                        {info.area.nombre} <span className="text-xs text-slate-500">ID {info.area.id}</span>
-                        <Badge kind={info.area.padre_id ? "child" : "root"} />
-                      </div>
-                    </div>
-                    <div className="rounded-xl ring-1 ring-slate-200 p-3">
-                      <div className="text-xs text-slate-600">Jerarquía (ancestros)</div>
-                      {info.ancestors.length === 0 ? (
-                        <div className="text-slate-700">— Es raíz —</div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1">
-                          {info.ancestors.map((p, i) => (
-                            <span key={p.id} className="inline-flex items-center gap-1">
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">{p.nombre}</span>
-                              {i < info.ancestors.length - 1 && <span className="text-slate-400">›</span>}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl ring-1 ring-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="text-xs text-slate-600">Subáreas directas</div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          className={btnBase + " py-1"}
-                          disabled={subPage <= 1}
-                          onClick={() => setSubPage(p => Math.max(1, p - 1))}
-                        >
-                          ◀
-                        </button>
-                        <span className="text-xs text-slate-600">
-                          Página {subPage} / {subTotalPages}
-                        </span>
-                        <button
-                          className={btnBase + " py-1"}
-                          disabled={subPage >= subTotalPages}
-                          onClick={() => setSubPage(p => Math.min(subTotalPages, p + 1))}
-                        >
-                          ▶
-                        </button>
-                        <select
-                          className={fieldBase + " py-1 w-24"}
-                          value={subSize}
-                          onChange={(e) => { setSubSize(Number(e.target.value)); setSubPage(1); }}
-                        >
-                          {[4, 8, 12, 16].map(n => <option key={n} value={n}>{n} / pág</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {info.children.length === 0 ? (
-                      <div className="text-slate-700">— Sin subáreas —</div>
-                    ) : (
-                      <ul className="grid sm:grid-cols-2 gap-2">
-                        {subPageItems.map(c => (
-                          <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
-                            <div className="text-slate-700">{c.nombre}</div>
-                            <span className="text-xs text-slate-500">ID {c.id}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

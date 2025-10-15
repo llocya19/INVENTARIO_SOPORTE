@@ -3,6 +3,35 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { login } from "../services/authService";
 
+/* =========================
+   Tema Hospital – Crema + Blanco
+========================= */
+const BG_APP   = "bg-[#FFFDF8]"; // crema institucional
+const TEXT     = "text-slate-800";
+const MUTED    = "text-slate-600";
+const section  = "rounded-3xl border border-slate-200 bg-white shadow-sm";
+const card     = "rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm";
+const baseText = "leading-relaxed tracking-[0.01em]";
+
+// Controles accesibles
+const focusRing =
+  "focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:border-emerald-300/60";
+
+const fieldBase =
+  "w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-base " +
+  "placeholder-slate-400 " + TEXT + " " + focusRing + " transition";
+
+// Botones (mín 44px alto)
+
+
+const btnPrimary =
+  "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base " +
+  "bg-emerald-600 text-white font-medium hover:bg-emerald-500 active:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed " +
+  "min-h[44px] min-w-[112px]";
+
+/* =========================
+   Página
+========================= */
 export default function Login() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
@@ -19,7 +48,7 @@ export default function Login() {
   useEffect(() => {
     // Autofocus al usuario
     userRef.current?.focus();
-    // Cargar último usuario (si dejaste algo en localStorage)
+    // Cargar último usuario (si existe)
     const last = localStorage.getItem("last_user");
     if (last) setU(last);
   }, []);
@@ -36,7 +65,7 @@ export default function Login() {
       location.href = "/";
     } catch (e: any) {
       setMsg(e?.response?.data?.error || "Error de autenticación");
-      // lleva el foco al bloque de error para lectores de pantalla
+      // foco al bloque de error para accesibilidad
       setTimeout(() => errRef.current?.focus(), 0);
     } finally {
       setLoading(false);
@@ -44,49 +73,60 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Panel ilustración / branding */}
-        <aside className="hidden lg:flex relative overflow-hidden rounded-3xl bg-slate-900 text-white ring-1 ring-black/10">
-          <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
-          <div className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-emerald-400/20 blur-2xl" />
-          <div className="relative p-10 flex flex-col justify-between">
-            <div className="space-y-2">
-              <div className="text-3xl font-semibold tracking-tight">Inventario TI</div>
-              <div className="text-slate-300 leading-relaxed">
-                Control centralizado de equipos, componentes y periféricos.
+    <div className={`${BG_APP} ${TEXT} min-h-screen flex items-center justify-center p-4`}>
+      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+        {/* Panel ilustración / branding (crema + blanco, sobrio) */}
+        <aside className={`hidden lg:flex relative overflow-hidden ${section}`}>
+          {/* Halos muy sutiles para dar vida sin saturar */}
+          <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-emerald-200/20 blur-3xl" />
+          <div className="absolute -bottom-20 -left-16 h-64 w-64 rounded-full bg-sky-200/20 blur-3xl" />
+
+          <div className="relative p-10 flex flex-col justify-between min-h-[520px]">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+                  <HospitalLogo />
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold">Inventario TI</div>
+                  <div className={`${MUTED} text-sm`}>Hospital · Mesa de Ayuda</div>
+                </div>
               </div>
+              <p className={`${MUTED} ${baseText}`}>
+                Control centralizado de equipos, componentes y periféricos con trazabilidad completa.
+              </p>
             </div>
-            <ul className="mt-8 space-y-3 text-sm text-slate-300">
+
+            <ul className="mt-8 space-y-3 text-sm">
               <li className="flex items-start gap-2">
-                <Dot /> Auditoría automática por usuario y acción
+                <Dot /> Auditoría por usuario y acción
               </li>
               <li className="flex items-start gap-2">
-                <Dot /> Reportes y panel ejecutivo en tiempo real
+                <Dot /> Reportes y tablero ejecutivo
               </li>
               <li className="flex items-start gap-2">
-                <Dot /> Flujos para alta, baja, asignación y mantenimiento
+                <Dot /> Flujos de alta, baja y mantenimiento
               </li>
             </ul>
-            <div className="mt-10 text-xs text-slate-400">
-              © {new Date().getFullYear()} · Mesa de Ayuda / IT
+
+            <div className="mt-10 text-xs text-slate-500">
+              © {new Date().getFullYear()} · Soporte TI Hospital
             </div>
           </div>
         </aside>
 
-        {/* Formulario */}
-        <main className="bg-white rounded-3xl shadow-sm ring-1 ring-slate-200 p-6 sm:p-8">
+        {/* Formulario de acceso */}
+        <main className={card + " " + baseText} role="main" aria-labelledby="login-title">
           <header className="mb-6">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-                {/* Logo simple */}
+              <div className="h-11 w-11 rounded-2xl bg-slate-900 text-white flex items-center justify-center">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 2l7 4v6c0 5-3 7-7 10-4-3-7-5-7-10V6l7-4z" />
                 </svg>
               </div>
               <div>
-                <div className="text-2xl font-semibold leading-tight">Iniciar sesión</div>
-                <div className="text-slate-500 text-sm">Usa tus credenciales corporativas</div>
+                <h1 id="login-title" className="text-[22px] font-semibold">Iniciar sesión</h1>
+                <p className={`${MUTED} text-sm`}>Usa tus credenciales corporativas</p>
               </div>
             </div>
           </header>
@@ -95,7 +135,7 @@ export default function Login() {
             <div
               ref={errRef}
               tabIndex={-1}
-              className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
+              className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
               role="alert"
               aria-live="assertive"
             >
@@ -114,7 +154,7 @@ export default function Login() {
                 ref={userRef}
                 inputMode="text"
                 autoComplete="username"
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400/60"
+                className={fieldBase + " mt-1"}
                 placeholder="ej. jdoe"
                 value={username}
                 onChange={(e) => setU(e.target.value)}
@@ -136,7 +176,7 @@ export default function Login() {
                   id="password"
                   type={showPwd ? "text" : "password"}
                   autoComplete="current-password"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-11 text-sm outline-none focus:ring-2 focus:ring-slate-400/60"
+                  className={fieldBase + " pr-12"}
                   value={password}
                   onChange={(e) => setP(e.target.value)}
                   onKeyDown={(e) => setCaps(e.getModifierState?.("CapsLock") || false)}
@@ -145,14 +185,14 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPwd((v) => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-600 hover:bg-slate-100"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-2 text-slate-600 hover:bg-slate-100"
                   aria-label={showPwd ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {showPwd ? <EyeOffIcon /> : <EyeIcon />}
                 </button>
               </div>
               {caps && (
-                <div className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
+                <div className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
                   Bloq Mayús está activado
                 </div>
               )}
@@ -163,22 +203,22 @@ export default function Login() {
               <label className="inline-flex items-center gap-2 text-sm text-slate-700 select-none">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-400"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
                 />
                 Recordarme
               </label>
-              <a className="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4" href="mailto:soporte@empresa.com">
+              <a
+                className="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4"
+                href="mailto:soporte@empresa.com"
+              >
                 ¿Olvidaste tu contraseña?
               </a>
             </div>
 
             {/* Submit */}
-            <button
-              className="w-full inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400/60 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!canSubmit}
-            >
+            <button className={btnPrimary + " w-full"} disabled={!canSubmit}>
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Spinner /> Ingresando…
@@ -207,7 +247,7 @@ export default function Login() {
   );
 }
 
-/* ====== íconos/mini componentes ====== */
+/* ====== Íconos / Mini componentes ====== */
 function Spinner() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -218,8 +258,15 @@ function Spinner() {
 }
 
 function Dot() {
+  return <span className="mt-1 inline-flex h-2 w-2 flex-none rounded-full bg-emerald-500" aria-hidden="true" />;
+}
+
+function HospitalLogo() {
   return (
-    <span className="mt-1 inline-flex h-2 w-2 flex-none rounded-full bg-emerald-400" aria-hidden="true" />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {/* Cruz/escudo sencillo */}
+      <path d="M12 2a10 10 0 100 20 10 10 0 000-20Zm1 5v4h4v2h-4v4h-2v-4H7v-2h4V7h2Z" />
+    </svg>
   );
 }
 
