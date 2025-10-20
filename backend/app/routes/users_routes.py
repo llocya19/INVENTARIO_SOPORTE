@@ -1,4 +1,3 @@
-# backend/app/routes/users_routes.py
 from flask import Blueprint, request, jsonify
 from app.core.security import require_auth, require_admin
 from app.models import user_model
@@ -10,8 +9,9 @@ bp = Blueprint("users", __name__, url_prefix="/api/users")
 @require_admin
 def list_users():
     q = request.args.get("q")
-    users = user_model.list_users(request.claims["username"], q)
-    return jsonify(users)
+    rol = request.args.get("rol")  # e.g. PRACTICANTE
+    users = user_model.list_users(request.claims["username"], q, rol)
+    return jsonify({"items": users})
 
 @bp.get("/<int:user_id>")
 @require_auth
@@ -36,7 +36,6 @@ def create_user():
 
     new_id, err = user_model.create_user(request.claims["username"], username, password, rol, int(area_id))
     if err: return {"error": err}, 400
-    # la respuesta expone el rol normalizado de salida
     return {"id": new_id, "username": username, "rol": rol, "area_id": int(area_id)}
 
 @bp.patch("/<int:user_id>")
@@ -44,7 +43,6 @@ def create_user():
 @require_admin
 def update_user(user_id):
     d = request.get_json(force=True)
-    # Campos permitidos: password, rol, area_id, activo
     allow = {"password","rol","area_id","activo"}
     data = {k: v for k, v in d.items() if k in allow}
     err = user_model.update_user(request.claims["username"], user_id, data)

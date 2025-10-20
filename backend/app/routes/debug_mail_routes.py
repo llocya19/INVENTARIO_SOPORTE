@@ -1,19 +1,29 @@
-# app/routes/debug_mail_routes.py
-from flask import Blueprint, request
-from app.core.security import require_auth, require_roles
+from flask import Blueprint
+from app.core.security import require_roles
+from app.db import get_conn
 from app.utils.mailer import send_mail_safe
 
-bp = Blueprint("debug_mail", __name__, url_prefix="/api/_debug")
+bp = Blueprint("debug_mail", __name__, url_prefix="/api/debug-mail")
 
-@bp.post("/test-mail")
-@require_auth
+@bp.post("/send-pending")
 @require_roles(["ADMIN"])
-def test_mail():
-    d = request.get_json(silent=True) or {}
-    to = (d.get("to") or "").strip() or None
-    subject = d.get("subject") or "Prueba de correo"
-    body = d.get("body") or "Este es un mensaje de prueba desde inventario."
-    ok, err = send_mail_safe(subject, body, to_addr=to)
-    if not ok:
-        return {"ok": False, "error": err}, 500
-    return {"ok": True}
+def send_pending():
+    sent = 0
+    with get_conn("system") as (conn, cur):
+        cur.execute("""
+          SELECT n.notif_id, n.tipo, n.destinatario_usuario_id, n.subject, n.body,
+                 u.usuario_email
+          FROM inv.notificaciones n
+          LEFT JOIN inv.usuarios u ON u.usuario_id = n.destinatario_usuario_id
+          WHERE n.sent_at IS NULL
+          ORDER BY n.created_at
+          LIMIT 50
+        """)
+        rows = cur.fetchall()
+        for notif_id, _tipo, _uid, subject, body, email in rows:
+            if not email:
+                continue
+            if send_mail_safe(subject=subject, body=body, to=email):
+                cur.execute("UPDATE inv.notificaciones SET sent_at=now() WHERE notif_id=%s", (notif_id,))
+                sent += 1
+    return {"ok": True, "sent": sent}

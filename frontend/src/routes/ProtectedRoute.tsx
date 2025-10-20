@@ -1,4 +1,3 @@
-// src/routes/ProtectedRoute.tsx
 import { Navigate } from "react-router-dom";
 import { getUser } from "../services/authService";
 import type { JSX } from "react";

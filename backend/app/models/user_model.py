@@ -1,25 +1,20 @@
-# backend/app/models/user_model.py
 from typing import Optional, Tuple, List, Dict
 from app.db import get_conn
 
 # ---------- util: mapeos de rol ----------
 def _ui_to_db_role(rol_ui: str) -> str:
     """
-    Roles visibles en UI: ADMIN | USUARIO | PRACTICANTE
-    En BD: ADMIN | USUARIOS | PRACTICANTE
+    UI: ADMIN | USUARIO | PRACTICANTE
+    BD: ADMIN | USUARIOS | PRACTICANTE
     """
     r = (rol_ui or "").strip().upper()
     if r == "USUARIO":
         return "USUARIOS"
     if r in ("ADMIN", "PRACTICANTE"):
         return r
-    # por defecto no válido → lo retornamos tal cual
     return r
 
 def _db_to_ui_role(rol_db: str) -> str:
-    """
-    ADMIN | USUARIOS | PRACTICANTE  ->  ADMIN | USUARIO | PRACTICANTE
-    """
     r = (rol_db or "").strip().upper()
     if r == "USUARIOS":
         return "USUARIO"
@@ -33,10 +28,6 @@ def _role_id(cur, rol_nombre_ui: str) -> Optional[int]:
 
 # ---------- LOGIN ----------
 def login_and_check(username: str, password: str):
-    """
-    Permite login a cualquier usuario ACTIVO (ADMIN, PRACTICANTE, USUARIO).
-    La autorización fina se aplica con decoradores por ruta.
-    """
     with get_conn(username) as (conn, cur):
         cur.execute("""
           SELECT u.usuario_id, u.usuario_username, u.usuario_area_id, r.rol_nombre,
@@ -51,31 +42,29 @@ def login_and_check(username: str, password: str):
             return None, "Usuario no existe"
 
         user_id, uname, area_id, rol_db, activo, hashpwd = row
-
-        # Verificar contraseña
         cur.execute("SELECT %s = crypt(%s, %s)", (hashpwd, password, hashpwd))
         ok_pwd = cur.fetchone()[0]
         if not ok_pwd:
             return None, "Contraseña incorrecta"
-
         if not activo:
             return None, "Usuario desactivado"
 
         rol_ui = _db_to_ui_role(rol_db)
-
-        # Último login
         cur.execute("UPDATE inv.usuarios SET usuario_ultimo_login = now() WHERE usuario_id=%s", (user_id,))
 
     return {"id": user_id, "username": uname, "area_id": area_id, "rol": rol_ui}, None
 
 
 # ---------- CRUD ----------
-def list_users(app_user: str, q: Optional[str] = None) -> List[Dict]:
+def list_users(app_user: str, q: Optional[str] = None, rol_ui: Optional[str] = None) -> List[Dict]:
     where = []
     params: List = []
     if q:
         where.append("(u.usuario_username ILIKE %s)")
         params.append(f"%{q}%")
+    if rol_ui:
+        where.append("r.rol_nombre = %s")
+        params.append(_ui_to_db_role(rol_ui))
 
     SQL = f"""
     SELECT u.usuario_id, u.usuario_username, u.usuario_activo, u.usuario_area_id,
@@ -124,7 +113,6 @@ def create_user(app_user: str, username: str, password: str, rol_ui: str, area_i
         rid = _role_id(cur, rol_ui)
         if not rid:
             return None, "Rol inexistente"
-
         try:
             cur.execute("""
               INSERT INTO inv.usuarios(usuario_username, usuario_password_bcrypt, rol_id, usuario_area_id, usuario_activo)
@@ -144,7 +132,6 @@ def update_user(app_user: str, user_id: int, data: dict) -> Optional[str]:
         params.append(data["password"])
 
     if "rol" in data and data["rol"]:
-        # viene en UI: ADMIN | USUARIO | PRACTICANTE
         rol_ui = str(data["rol"]).upper()
         with get_conn(app_user) as (conn, cur):
             rid = _role_id(cur, rol_ui)
@@ -188,28 +175,19 @@ def ensure_user_for_equipo(app_user: str,
                            username: Optional[str],
                            raw_password: Optional[str],
                            area_id: Optional[int]) -> None:
-    """
-    Crea/actualiza un usuario para un equipo con ROL BD = 'USUARIOS'.
-    - Si username es vacío/None, no hace nada.
-    - Si existe, actualiza password (si viene) y area_id (si viene) y fuerza rol 'USUARIOS'.
-    - Si no existe, lo crea con rol 'USUARIOS'.
-    """
     uname = (username or "").strip()
     if not uname:
         return
 
     with get_conn(app_user) as (conn, cur):
-        # Asegurar rol BD = USUARIOS (¡OJO! no 'USUARIO')
         cur.execute("SELECT rol_id FROM inv.roles WHERE rol_nombre = 'USUARIOS'")
         r = cur.fetchone()
         if not r:
-            # Respeta el CHECK de roles (ADMIN,PRACTICANTE,USUARIOS)
             cur.execute("INSERT INTO inv.roles(rol_nombre) VALUES ('USUARIOS') RETURNING rol_id")
             rid = int(cur.fetchone()[0])
         else:
             rid = int(r[0])
 
-        # ¿existe el usuario?
         cur.execute("SELECT usuario_id FROM inv.usuarios WHERE usuario_username = %s", (uname,))
         row = cur.fetchone()
 
@@ -217,15 +195,12 @@ def ensure_user_for_equipo(app_user: str,
             uid = int(row[0])
             sets = ["rol_id=%s"]
             params: List = [rid]
-
             if raw_password:
                 sets.append("usuario_password_bcrypt = crypt(%s, gen_salt('bf'))")
                 params.append(raw_password)
-
             if area_id is not None:
                 sets.append("usuario_area_id = %s")
                 params.append(int(area_id))
-
             params.append(uid)
             cur.execute(f"UPDATE inv.usuarios SET {', '.join(sets)} WHERE usuario_id=%s", params)
         else:

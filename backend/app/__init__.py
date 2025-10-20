@@ -1,4 +1,3 @@
-# backend/app/__init__.py
 import os
 from flask import Flask, send_from_directory
 from flask_cors import CORS
@@ -19,10 +18,10 @@ def create_app():
     from app.routes.incidencias_routes import bp as incidencias_bp
     from app.routes.profile_routes import bp as profile_bp
     from app.routes.debug_mail_routes import bp as debug_mail_bp
+    from app.routes.admin_jobs_routes import bp as jobs_bp  # <<--- NUEVO
 
     app.register_blueprint(spec_bp)
     app.register_blueprint(media_bp)
-
     app.register_blueprint(items_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
@@ -33,16 +32,15 @@ def create_app():
     app.register_blueprint(incidencias_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(debug_mail_bp)
-
-
+    app.register_blueprint(jobs_bp)  # <<--- NUEVO
 
     @app.get("/health")
-    def health(): return {"ok": True}
-    
-   
+    def health(): 
+        return {"ok": True}
+
     @app.route("/uploads/<path:filename>")
     def _uploads(filename):
         updir = os.path.join(app.instance_path, "uploads")
         return send_from_directory(updir, filename)
 
-    return app 
+    return app

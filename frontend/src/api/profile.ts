@@ -1,8 +1,8 @@
-import http from "../api/http";
+import http from "./http";
 
 export async function getProfile() {
-  const r = await http.get<{ username: string; rol: string; email: string | null }>("/api/profile");
-  return r.data;
+  const { data } = await http.get<{ username: string; rol: string; email: string | null }>("/api/profile");
+  return data;
 }
 
 export async function updateEmail(email: string) {

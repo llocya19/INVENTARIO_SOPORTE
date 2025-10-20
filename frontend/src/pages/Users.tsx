@@ -1,4 +1,3 @@
-// src/pages/Users.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import http from "../api/http";
 
@@ -9,9 +8,9 @@ type User = {
   id: number;
   username: string;
   activo: boolean;
-  area_id: number;
+  area_id: number | null;
   rol: "ADMIN" | "USUARIO" | "PRACTICANTE";
-  ultimo_login?: string;
+  ultimo_login?: string | null;
 };
 
 /* =========================
@@ -158,7 +157,7 @@ export default function Users() {
     username: "",
     password: "",
     rol: "PRACTICANTE" as User["rol"],
-    area_id: 0,
+    area_id: "" as string | number, // texto para input
   });
 
   // Editar inline (área NO editable)
@@ -177,10 +176,19 @@ export default function Users() {
       setLoading(true);
       setMsg(null);
       const params = q ? { params: { q } } : undefined;
-      const r = await http.get<User[]>("/api/users", params);
-      setItems(r.data);
+      const r = await http.get("/api/users", params);
+
+      // 🔧 Normalizar (array plano o {items: []})
+      const data = Array.isArray(r.data)
+        ? r.data
+        : Array.isArray(r.data?.items)
+        ? r.data.items
+        : [];
+
+      setItems(data as User[]);
     } catch (e: any) {
       setMsg(e?.response?.data?.error || "No se pudo cargar usuarios");
+      setItems([]); // deja array vacío para que filtered.map no falle
     } finally {
       setLoading(false);
     }
@@ -198,15 +206,20 @@ export default function Users() {
     return () => clearTimeout(t);
   }, [ok]);
 
-  const filtered = useMemo(() => items, [items]);
+  // Siempre un array
+  const filtered = useMemo<User[]>(() => (Array.isArray(items) ? items : []), [items]);
 
   /* ------------ Crear ------------ */
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
     setOk(null);
-    if (!form.username.trim() || !form.password || !form.area_id) {
-      setMsg("Completa usuario, contraseña y área");
+
+    const areaParsed =
+      form.area_id === "" ? null : isNaN(Number(form.area_id)) ? null : Number(form.area_id);
+
+    if (!form.username.trim() || !form.password || areaParsed === null) {
+      setMsg("Completa usuario, contraseña y área (numérica).");
       return;
     }
     try {
@@ -214,10 +227,10 @@ export default function Users() {
         username: form.username.trim(),
         password: form.password,
         rol: form.rol,
-        area_id: form.area_id,
+        area_id: areaParsed,
       });
       setOk(`Usuario "${form.username.trim()}" creado correctamente.`);
-      setForm({ username: "", password: "", rol: "PRACTICANTE", area_id: 0 });
+      setForm({ username: "", password: "", rol: "PRACTICANTE", area_id: "" });
       await load();
       setOpenCreate(false);
     } catch (e: any) {
@@ -339,6 +352,7 @@ export default function Users() {
                       setTimeout(() => searchInputRef.current?.blur(), 0);
                     }
                   }}
+                  autoComplete="username"
                 />
               </div>
               <Button variant="secondary" onClick={load} disabled={loading}>
@@ -389,7 +403,7 @@ export default function Users() {
                     value={form.username}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
                     placeholder="ej. jdoe"
-                    autoComplete="off"
+                    autoComplete="username"
                   />
                 </div>
                 <div>
@@ -400,6 +414,7 @@ export default function Users() {
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     placeholder="••••••••"
+                    autoComplete="new-password"
                   />
                 </div>
                 <div>
@@ -419,10 +434,11 @@ export default function Users() {
                   <input
                     type="number"
                     className={fieldBase}
-                    value={form.area_id || ""}
-                    onChange={(e) => setForm({ ...form, area_id: Number(e.target.value) })}
+                    value={form.area_id}
+                    onChange={(e) => setForm({ ...form, area_id: e.target.value })}
                     placeholder="p. ej. 1"
                     min={0}
+                    inputMode="numeric"
                   />
                 </div>
               </div>
@@ -466,8 +482,7 @@ export default function Users() {
                     </div>
                     <div className="text-right text-sm text-slate-500">
                       <div>ID #{u.id}</div>
-                      {/* Área solo lectura */}
-                      <div>Área {u.area_id}</div>
+                      <div>Área {u.area_id ?? "—"}</div>
                       <div className="mt-1">
                         {u.ultimo_login ? new Date(u.ultimo_login).toLocaleString() : "-"}
                       </div>
@@ -493,13 +508,13 @@ export default function Users() {
                         <option value="true">Activo</option>
                         <option value="false">Inactivo</option>
                       </select>
-                      {/* Área NO editable - removido input */}
                       <input
                         type="password"
                         className={fieldBase}
                         placeholder="Nueva clave (opcional)"
                         value={edit.password ?? ""}
                         onChange={(e) => setEdit({ ...edit, password: e.target.value })}
+                        autoComplete="new-password"
                       />
                       <div className="sm:col-span-2 flex flex-wrap gap-2 justify-end">
                         <Button onClick={() => saveEdit(u.id)}>Guardar</Button>
@@ -527,10 +542,9 @@ export default function Users() {
           </div>
         </div>
 
-        {/* Desktop: tabla (sin solaparse) */}
+        {/* Desktop: tabla */}
         <div className={`${section} relative overflow-hidden hidden md:block`}>
           <div className="max-h-[60vh] overflow-auto">
-            {/* table-auto para que las columnas se ajusten al contenido */}
             <table className="w-full text-[14px] table-auto">
               <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur supports-[backdrop-filter]:bg-slate-50/75 border-b">
                 <tr className="text-left text-slate-600">
@@ -587,8 +601,7 @@ export default function Users() {
                     </td>
 
                     <td className="py-2.5 px-3 whitespace-nowrap">
-                      {/* Área solo lectura */}
-                      <span className="font-medium text-slate-700">{u.area_id}</span>
+                      <span className="font-medium text-slate-700">{u.area_id ?? "—"}</span>
                     </td>
 
                     <td className="py-2.5 px-3">
@@ -621,6 +634,7 @@ export default function Users() {
                             className={fieldBase + " w-56"}
                             value={edit.password ?? ""}
                             onChange={(e) => setEdit({ ...edit, password: e.target.value })}
+                            autoComplete="new-password"
                           />
                           <Button onClick={() => saveEdit(u.id)}>Guardar</Button>
                           <Button variant="secondary" onClick={cancelEdit}>
