@@ -1,3 +1,4 @@
+// frontend/src/pages/IncidenciasAdmin.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   listarIncidencias,
@@ -9,10 +10,9 @@ import {
 } from "../api/incidencias";
 import http from "../api/http";
 import { getUser } from "../services/authService";
+import IncidenciaNotifier from "../components/IncidenciaNotifier";
 
-/* =========================
-   Estilos
-========================= */
+/* UI tokens */
 const card = "bg-white rounded-2xl shadow-sm ring-1 ring-slate-200";
 const pad = "p-4 md:p-5";
 const fieldBase =
@@ -23,9 +23,6 @@ const btnBase =
 const btnPrimary =
   "inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white px-4 py-2 text-sm shadow-sm hover:bg-emerald-500 active:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed";
 
-/* =========================
-   UI helpers
-========================= */
 function BadgeEstado({ value }: { value?: string }) {
   const v = (value || "").toUpperCase();
   const map: Record<string, string> = {
@@ -56,11 +53,9 @@ export default function IncidenciasAdmin() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // detalle
   const [show, setShow] = useState(false);
   const [sel, setSel] = useState<(Incidencia & { mensajes: any[] }) | null>(null);
 
-  // practicantes (solo admin)
   const [practs, setPracts] = useState<Pract[]>([]);
   const [assignUsername, setAssignUsername] = useState<string>("");
 
@@ -70,8 +65,6 @@ export default function IncidenciasAdmin() {
     setLoading(true);
     setMsg(null);
     try {
-      // El backend ya filtra por rol:
-      // - Admin/Pra: ven lo que corresponde.
       const data = await listarIncidencias({ estado, area_id: areaId, q, page, size });
       setRows(data.items);
       setTotal(data.total);
@@ -97,10 +90,8 @@ export default function IncidenciasAdmin() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estado, areaId, q, page]);
-
   useEffect(() => {
     loadPracts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function openDetail(id: number) {
@@ -115,6 +106,19 @@ export default function IncidenciasAdmin() {
     }
   }
 
+  // === Escucha evento global para refrescar el hilo si está abierto ===
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const e = ev as CustomEvent<{ inc_id: number }>;
+      if (!show || !sel) return;
+      if (e.detail?.inc_id === sel.inc_id) {
+        openDetail(sel.inc_id); // recarga mensajes del hilo abierto
+      }
+    };
+    window.addEventListener("inc:new_msg", handler as EventListener);
+    return () => window.removeEventListener("inc:new_msg", handler as EventListener);
+  }, [show, sel]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -126,14 +130,16 @@ export default function IncidenciasAdmin() {
         </button>
       </div>
 
-      {/* Filtros: el practicante no necesita filtrar por área */}
       <div className={`${card} ${pad}`}>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
             <div className="text-sm text-slate-600 mb-1">Estado</div>
             <select
               value={estado}
-              onChange={(e) => { setPage(1); setEstado(e.target.value); }}
+              onChange={(e) => {
+                setPage(1);
+                setEstado(e.target.value);
+              }}
               className={selectBase}
             >
               <option value="ABIERTA">ABIERTA</option>
@@ -163,9 +169,14 @@ export default function IncidenciasAdmin() {
                 className={fieldBase + " flex-1"}
                 placeholder="código equipo, título, usuario…"
                 value={q}
-                onChange={(e) => { setPage(1); setQ(e.target.value); }}
+                onChange={(e) => {
+                  setPage(1);
+                  setQ(e.target.value);
+                }}
               />
-              <button className={btnPrimary + " shrink-0"} onClick={load}>Buscar</button>
+              <button className={btnPrimary + " shrink-0"} onClick={load}>
+                Buscar
+              </button>
             </div>
           </div>
         </div>
@@ -176,7 +187,9 @@ export default function IncidenciasAdmin() {
       <div className={card}>
         <div className="px-4 py-2 border-b text-sm text-slate-600 flex items-center justify-between">
           <span>Total: {total}</span>
-          <span className="text-xs text-slate-500">Página {page} / {totalPages}</span>
+          <span className="text-xs text-slate-500">
+            Página {page} / {totalPages}
+          </span>
         </div>
 
         <div className="divide-y">
@@ -193,11 +206,13 @@ export default function IncidenciasAdmin() {
                     <BadgeEstado value={r.estado} />
                   </div>
                   <div className="text-sm text-slate-600 truncate">
-                    <span className="font-mono">#{r.inc_id}</span> · {r.area_nombre || "—"} · {r.equipo_codigo || "sin equipo"}
+                    <span className="font-mono">#{r.inc_id}</span> · {r.area_nombre || "—"} · {r.equipo_codigo || "sinequipo"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className={btnPrimary} onClick={() => openDetail(r.inc_id)}>Ver</button>
+                  <button className={btnPrimary} onClick={() => openDetail(r.inc_id)}>
+                    Ver
+                  </button>
                 </div>
               </div>
             ))
@@ -206,10 +221,24 @@ export default function IncidenciasAdmin() {
 
         {totalPages > 1 && (
           <div className="px-3 md:px-4 py-3 border-t flex items-center justify-between text-sm">
-            <span>Página {page} de {totalPages}</span>
+            <span>
+              Página {page} de {totalPages}
+            </span>
             <div className="flex items-center gap-2">
-              <button disabled={page <= 1} className={`${btnBase} disabled:opacity-50`} onClick={() => setPage((p) => Math.max(1, p - 1))}>◀</button>
-              <button disabled={page >= totalPages} className={`${btnBase} disabled:opacity-50`} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>▶</button>
+              <button
+                disabled={page <= 1}
+                className={`${btnBase} disabled:opacity-50`}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ◀
+              </button>
+              <button
+                disabled={page >= totalPages}
+                className={`${btnBase} disabled:opacity-50`}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                ▶
+              </button>
             </div>
           </div>
         )}
@@ -227,6 +256,9 @@ export default function IncidenciasAdmin() {
           onRefresh={load}
         />
       )}
+
+      {/* Notificador global: muestra burbuja y abre el hilo al tocar */}
+      <IncidenciaNotifier onOpenIncidencia={(id) => openDetail(id)} />
     </div>
   );
 }
@@ -255,6 +287,7 @@ function IncidenciaDetail({
 }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [soloStaff, setSoloStaff] = useState(false);
 
   async function doAssign() {
     if (!assignUsername) return;
@@ -283,10 +316,19 @@ function IncidenciaDetail({
     if (!note.trim()) return;
     setMsg(null);
     try {
-      await agregarMensaje(inc.inc_id, note.trim());
+      await agregarMensaje(inc.inc_id, note.trim(), {
+        solo_staff: (isAdmin || isPract) ? soloStaff : false,
+      });
       setNote("");
+      setSoloStaff(false);
       await onRefresh();
       setMsg("Mensaje agregado");
+      // Emite evento para que otras vistas refresquen si tienen ese hilo abierto
+      window.dispatchEvent(
+        new CustomEvent("inc:new_msg", {
+          detail: { inc_id: inc.inc_id, created_at: new Date().toISOString() },
+        })
+      );
     } catch (er: any) {
       setMsg(er?.response?.data?.error || "No se pudo agregar mensaje");
     }
@@ -296,26 +338,38 @@ function IncidenciaDetail({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-[760px]">
+        {/* FIX: quitado el '}' extra que rompía el JSX */}
         <div className={`${card} overflow-hidden mx-3 sm:mx-0`}>
           <div className="px-4 py-3 border-b bg-white flex items-center justify-between sticky top-0">
-            <div className="font-semibold">Incidencia <span className="font-mono">#{inc.inc_id}</span></div>
-            <button className={btnBase} onClick={onClose}>Cerrar</button>
+            <div className="font-semibold">
+              Incidencia <span className="font-mono">#{inc.inc_id}</span>
+            </div>
+            <button className={btnBase} onClick={onClose}>
+              Cerrar
+            </button>
           </div>
 
           <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
-            {msg && <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{msg}</div>}
+            {msg && (
+              <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                {msg}
+              </div>
+            )}
 
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="text-lg font-medium">{inc.titulo}</div>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{inc.estado}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                  {inc.estado}
+                </span>
               </div>
               <div className="text-sm text-slate-600">{inc.descripcion}</div>
-              <div className="text-xs text-slate-500">{inc.area_nombre || "—"} · {inc.equipo_codigo || "sin equipo"}</div>
+              <div className="text-xs text-slate-500">
+                {inc.area_nombre || "—"} · {inc.equipo_codigo || "sin equipo"}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Asignar: solo Admin */}
               {isAdmin && (
                 <div className="rounded-xl ring-1 ring-slate-200 p-3">
                   <div className="text-sm text-slate-600 mb-1">Asignar a practicante</div>
@@ -327,30 +381,41 @@ function IncidenciaDetail({
                     >
                       <option value="">— Seleccione —</option>
                       {practs.map((p) => (
-                        <option key={p.id} value={p.username}>{p.username}</option>
+                        <option key={p.id} value={p.username}>
+                          {p.username}
+                        </option>
                       ))}
                     </select>
-                    <button className={btnPrimary} onClick={doAssign}>Asignar</button>
+                    <button className={btnPrimary} onClick={doAssign}>
+                      Asignar
+                    </button>
                   </div>
                 </div>
               )}
 
-              {/* Estado: Admin puede todo; Practicante solo EN_PROCESO */}
               <div className="rounded-xl ring-1 ring-slate-200 p-3">
                 <div className="text-sm text-slate-600 mb-1">Estado</div>
                 <div className="flex flex-wrap items-center gap-2">
                   {isAdmin && (
-                    <button onClick={() => setEstadoBtn("ABIERTA")} className={btnBase}>ABIERTA</button>
+                    <button onClick={() => setEstadoBtn("ABIERTA")} className={btnBase}>
+                      ABIERTA
+                    </button>
                   )}
-                  <button onClick={() => setEstadoBtn("EN_PROCESO")} className={btnBase}>EN_PROCESO</button>
+                  <button onClick={() => setEstadoBtn("EN_PROCESO")} className={btnBase}>
+                    EN_PROCESO
+                  </button>
                   {isAdmin ? (
-                    <button onClick={() => setEstadoBtn("CERRADA")} className={btnBase}>CERRADA</button>
+                    <button onClick={() => setEstadoBtn("CERRADA")} className={btnBase}>
+                      CERRADA
+                    </button>
                   ) : (
-                    <button className={`${btnBase} opacity-50 cursor-not-allowed`} title="Solo Admin">CERRADA</button>
+                    <button className={`${btnBase} opacity-50 cursor-not-allowed`} title="Solo Admin">
+                      CERRADA
+                    </button>
                   )}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
-                  * Una vez CERRADA, ya no se puede modificar (el backend lo hace cumplir).
+                  * Una vez CERRADA, ya no se puede modificar.
                 </div>
               </div>
             </div>
@@ -359,9 +424,21 @@ function IncidenciaDetail({
               <div className="text-sm font-medium mb-2">Mensajes</div>
               <div className="space-y-2 max-h-60 overflow-auto pr-1">
                 {inc.mensajes?.length ? (
-                  inc.mensajes.map((m, i) => (
-                    <div key={i} className="text-sm p-2 rounded-lg bg-slate-50 ring-1 ring-slate-200">
-                      <div className="text-slate-700 whitespace-pre-wrap break-words">{m.mensaje}</div>
+                  inc.mensajes.map((m: any) => (
+                    <div
+                      key={m.msg_id ?? m.created_at}
+                      className="text-sm p-2 rounded-lg bg-slate-50 ring-1 ring-slate-200"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="text-slate-700 whitespace-pre-wrap break-words flex-1">
+                          {m.mensaje}
+                        </div>
+                        {m.solo_staff && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 shrink-0">
+                            Privado · soporte
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[11px] text-slate-400 mt-1">
                         {m.usuario} · {new Date(m.created_at).toLocaleString()}
                       </div>
@@ -372,14 +449,28 @@ function IncidenciaDetail({
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {(isAdmin || isPract) && (
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={soloStaff}
+                      onChange={(e) => setSoloStaff(e.target.checked)}
+                    />
+                    Solo soporte (oculta al usuario)
+                  </label>
+                )}
                 <input
-                  className={fieldBase + " flex-1"}
+                  className={fieldBase + " flex-1 min-w-[220px]"}
                   placeholder="Añadir mensaje…"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addNote()}
                 />
-                <button className={btnPrimary} onClick={addNote}>Enviar</button>
+                <button className={btnPrimary} onClick={addNote}>
+                  Enviar
+                </button>
               </div>
             </div>
           </div>

@@ -29,7 +29,8 @@ def _get_equipo_area(cur, equipo_id: Optional[int]) -> tuple[Optional[str], Opti
         WHERE e.equipo_id=%s
     """, (equipo_id,))
     r = cur.fetchone()
-    if not r: return None, None, None
+    if not r: 
+        return None, None, None
     return r[0], r[1], r[2]
 
 # ============================================================
@@ -43,9 +44,7 @@ def create_incidencia(
     reportado_email: Optional[str] = None,   # opcional, se usará como Reply-To
 ) -> Tuple[Optional[int], Optional[str]]:
     """
-    Inserta en inv.incidencias:
-      columnas mínimas: inc_id, equipo_id, area_id, reportado_por, titulo, descripcion, estado, created_at ...
-    Además, notifica por email al ADMIN, incluyendo remitente, área/equipo y Reply-To del usuario si lo proporcionó.
+    Inserta en inv.incidencias y notifica por email al ADMIN.
     """
     with get_conn(app_user) as (conn, cur):
         try:
@@ -53,18 +52,17 @@ def create_incidencia(
 
             equipo_codigo, area_id_equipo, area_nombre_equipo = _get_equipo_area(cur, equipo_id)
 
-            # Fallback a área del usuario si la tabla la tiene y no vino área del equipo
+            # Fallback a área del usuario si existe la columna y no vino área del equipo
             area_id = area_id_equipo
-            if area_id is None:
-                cur.execute("""
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema='inv' AND table_name='usuarios' AND column_name='usuario_area_id'
-                """)
-                if cur.fetchone():
-                    cur.execute("SELECT usuario_area_id FROM inv.usuarios WHERE usuario_username=%s", (app_user,))
-                    a = cur.fetchone()
-                    if a and a[0] is not None:
-                        area_id = int(a[0])
+            cur.execute("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='inv' AND table_name='usuarios' AND column_name='usuario_area_id'
+            """)
+            if area_id is None and cur.fetchone():
+                cur.execute("SELECT usuario_area_id FROM inv.usuarios WHERE usuario_username=%s", (app_user,))
+                a = cur.fetchone()
+                if a and a[0] is not None:
+                    area_id = int(a[0])
 
             cur.execute("""
               INSERT INTO inv.incidencias(
@@ -91,7 +89,7 @@ def create_incidencia(
             send_mail_safe(
                 subject=f"[INCIDENCIA #{inc_id}] {titulo}",
                 body="\n".join(cuerpo),
-                to=None,  # ADMIN_TO
+                to=None,  # ADMIN_TO interno en mailer
                 reply_to=reportado_email or None,
             )
 
@@ -101,7 +99,7 @@ def create_incidencia(
             return None, f"No se pudo crear la incidencia: {e}"
 
 # ============================================================
-# LISTAR (admin/practicante ven todo; usuario sólo las suyas; practicante solo asignadas a él)
+# LISTAR
 # ============================================================
 def list_incidencias(
     app_user: str,
@@ -117,7 +115,7 @@ def list_incidencias(
     off = (p - 1) * s
 
     with get_conn(app_user) as (conn, cur):
-        # obtenemos rol para filtrar
+        # rol
         cur.execute("""
           SELECT r.rol_nombre
           FROM inv.usuarios u
@@ -143,9 +141,6 @@ def list_incidencias(
         params: List[Any] = []
 
         # Filtro por rol:
-        # - USUARIOS (usuario final): sólo sus incidencias (reportado_por)
-        # - PRACTICANTE: sólo las asignadas a él
-        # - ADMIN: sin filtro
         if rol_db == "USUARIOS":
             sql += " AND i.reportado_por = %s"
             params.append(app_user)
@@ -153,7 +148,7 @@ def list_incidencias(
             sql += " AND i.asignado_a = %s"
             params.append(app_user)
         else:
-            if mine:  # por si admin quiere "solo mías"
+            if mine:
                 sql += " AND i.reportado_por = %s"
                 params.append(app_user)
 
@@ -216,13 +211,34 @@ def get_incidencia(app_user: str, inc_id: int) -> Optional[Dict[str, Any]]:
         if not h:
             return None
 
+        # ¿existe solo_staff?
         cur.execute("""
-          SELECT mensaje, usuario, created_at
-          FROM inv.incidencia_mensajes
-          WHERE inc_id=%s
-          ORDER BY created_at ASC
-        """, (inc_id,))
-        ms = cur.fetchall()
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='inv' AND table_name='incidencia_mensajes' AND column_name='solo_staff'
+        """)
+        has_solo = bool(cur.fetchone())
+
+        if has_solo:
+            cur.execute("""
+              SELECT msg_id, mensaje, usuario, created_at, solo_staff
+              FROM inv.incidencia_mensajes
+              WHERE inc_id=%s
+              ORDER BY created_at ASC
+            """, (inc_id,))
+            ms = cur.fetchall()
+            mensajes = [
+                {"msg_id": m[0], "mensaje": m[1], "usuario": m[2], "created_at": m[3], "solo_staff": bool(m[4])}
+                for m in ms
+            ]
+        else:
+            cur.execute("""
+              SELECT mensaje, usuario, created_at
+              FROM inv.incidencia_mensajes
+              WHERE inc_id=%s
+              ORDER BY created_at ASC
+            """, (inc_id,))
+            ms = cur.fetchall()
+            mensajes = [{"mensaje": m[0], "usuario": m[1], "created_at": m[2]} for m in ms]
 
     return {
         "inc_id": h[0],
@@ -236,22 +252,37 @@ def get_incidencia(app_user: str, inc_id: int) -> Optional[Dict[str, Any]]:
         "area_nombre": h[8],
         "created_at": h[9],
         "asignado_a": h[10],
-        "mensajes": [{"mensaje": m[0], "usuario": m[1], "created_at": m[2]} for m in ms],
+        "mensajes": mensajes,
     }
 
 # ============================================================
-# MENSAJE (notifica a asignado y a reportante por email)
+# MENSAJE (notifica y devuelve msg_id)
 # ============================================================
-def add_mensaje(app_user: str, inc_id: int, cuerpo: str) -> Optional[str]:
+def add_mensaje(app_user: str, inc_id: int, cuerpo: str, solo_staff: bool = False) -> Tuple[Optional[int], Optional[str]]:
     with get_conn(app_user) as (conn, cur):
         try:
-            # guardamos primero el mensaje
+            # ¿existe la columna solo_staff?
             cur.execute("""
-              INSERT INTO inv.incidencia_mensajes(inc_id, usuario, mensaje)
-              VALUES (%s,%s,%s)
-            """, (inc_id, app_user, cuerpo))
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='inv' AND table_name='incidencia_mensajes' AND column_name='solo_staff'
+            """)
+            has_solo = bool(cur.fetchone())
 
-            # obtenemos info de la incidencia para correos
+            if has_solo:
+                cur.execute("""
+                  INSERT INTO inv.incidencia_mensajes(inc_id, usuario, mensaje, solo_staff)
+                  VALUES (%s,%s,%s,%s)
+                  RETURNING msg_id
+                """, (inc_id, app_user, cuerpo, solo_staff))
+            else:
+                cur.execute("""
+                  INSERT INTO inv.incidencia_mensajes(inc_id, usuario, mensaje)
+                  VALUES (%s,%s,%s)
+                  RETURNING msg_id
+                """, (inc_id, app_user, cuerpo))
+            msg_id = int(cur.fetchone()[0])
+
+            # info de la incidencia para correos
             cur.execute("""
               SELECT i.titulo, i.reportado_por, i.asignado_a, e.equipo_codigo, a.area_nombre
               FROM inv.incidencias i
@@ -261,15 +292,13 @@ def add_mensaje(app_user: str, inc_id: int, cuerpo: str) -> Optional[str]:
             """, (inc_id,))
             row = cur.fetchone()
             if not row:
-                return None
+                return msg_id, None
             titulo, reportado_por, asignado_a, equipo_codigo, area_nombre = row
 
-            # correos
             email_reportado = _get_user_email(cur, reportado_por) if reportado_por else None
             email_asignado  = _get_user_email(cur, asignado_a) if asignado_a else None
             email_autor     = _get_user_email(cur, app_user)
 
-            # armamos cuerpo enriquecido
             body_lines = [
                 f"Incidencia #{inc_id} · {titulo}",
                 f"De: {app_user}",
@@ -282,18 +311,15 @@ def add_mensaje(app_user: str, inc_id: int, cuerpo: str) -> Optional[str]:
                 body_lines += ["", *meta]
             body = "\n".join(body_lines)
 
-            # Destinatarios:
-            # - Si escribe el admin/practicante -> notificar al reportante (si tiene email)
-            # - Si escribe el reportante -> notificar al practicante asignado (si tiene email)
-            # En cualquier caso, como fallback el admin ya recibe todo por MAIL_ADMIN_TO cuando se crea,
-            # pero aquí enviamos directamente a los involucrados.
-            to_list: list[tuple[str,str|None]] = []
-            if app_user == reportado_por:
-                if email_asignado: to_list.append((email_asignado, email_autor))
+            # Destinatarios dependiendo de quién escribe y privacidad
+            to_list: list[tuple[str, str|None]] = []
+            if app_user == (reportado_por or ""):
+                if email_asignado:
+                    to_list.append((email_asignado, email_autor))
             else:
-                if email_reportado: to_list.append((email_reportado, email_autor))
+                if email_reportado and not solo_staff:  # si es privado no se avisa al usuario
+                    to_list.append((email_reportado, email_autor))
 
-            # Si ambos tienen correo y el autor es diferente, enviamos 2 correos independientes.
             for to_addr, reply_to in to_list:
                 send_mail_safe(
                     subject=f"[INCIDENCIA #{inc_id}] Nuevo mensaje",
@@ -302,13 +328,13 @@ def add_mensaje(app_user: str, inc_id: int, cuerpo: str) -> Optional[str]:
                     reply_to=reply_to or None,
                 )
 
-            return None
+            return msg_id, None
         except Exception as e:
             conn.rollback()
-            return f"No se pudo agregar el mensaje: {e}"
+            return None, f"No se pudo agregar el mensaje: {e}"
 
 # ============================================================
-# ASIGNAR (notifica por email al practicante y en CC al reportante si hay)
+# ASIGNAR
 # ============================================================
 def asignar_incidencia(app_user: str, inc_id: int, username: str) -> Optional[str]:
     with get_conn(app_user) as (conn, cur):
@@ -318,7 +344,7 @@ def asignar_incidencia(app_user: str, inc_id: int, username: str) -> Optional[st
             if not uid:
                 return "Usuario a asignar no existe"
 
-            # asignar por username (guardamos el username en la columna asignado_a)
+            # asignar por username
             cur.execute("UPDATE inv.incidencias SET asignado_a=%s WHERE inc_id=%s", (username, inc_id))
 
             # armar notificación
@@ -352,9 +378,9 @@ def asignar_incidencia(app_user: str, inc_id: int, username: str) -> Optional[st
             send_mail_safe(
                 subject=f"[INCIDENCIA #{inc_id}] Asignada a {username}",
                 body="\n".join(cuerpo),
-                to=email_pract or None,    # si no hay email del practicante, no falla
+                to=email_pract or None,
                 reply_to=None,
-                cc=[email_rep] if email_rep else None,  # el usuario se entera a quién se asignó
+                cc=[email_rep] if email_rep else None,
             )
 
             return None
@@ -382,12 +408,11 @@ def set_estado(app_user: str, inc_id: int, estado: str) -> Optional[str]:
 
             cur.execute("UPDATE inv.incidencias SET estado=%s WHERE inc_id=%s", (estado, inc_id))
 
-            # notificación de cambio de estado a ambos si hay correos
+            # notificación de cambio de estado
             email_rep = _get_user_email(cur, reportado_por) if reportado_por else None
             email_asg = _get_user_email(cur, asignado_a) if asignado_a else None
 
             body = f"Incidencia #{inc_id} · {titulo}\n\nNuevo estado: {estado}\nActualizado por: {app_user}"
-            # Enviamos dos correos simples si existen destinatarios (no bloquea si faltan)
             if email_rep:
                 send_mail_safe(subject=f"[INCIDENCIA #{inc_id}] Estado: {estado}", body=body, to=email_rep)
             if email_asg:
@@ -397,3 +422,81 @@ def set_estado(app_user: str, inc_id: int, estado: str) -> Optional[str]:
         except Exception as e:
             conn.rollback()
             return f"No se pudo cambiar estado: {e}"
+
+# ============================================================
+# UPDATES (pull incremental rápido para tiempo “real”)
+# ============================================================
+def list_updates(app_user: str, since_id: Optional[int]) -> Dict[str, Any]:
+    """
+    Devuelve mensajes con msg_id > since_id visibles para app_user.
+    Filtra por rol y privacidad (solo_staff).
+    """
+    with get_conn(app_user) as (conn, cur):
+        # rol
+        cur.execute("""
+          SELECT UPPER(r.rol_nombre)
+          FROM inv.usuarios u JOIN inv.roles r ON r.rol_id=u.rol_id
+          WHERE u.usuario_username=%s
+        """, (app_user,))
+        r = cur.fetchone()
+        rol = (r[0] if r else "USUARIOS").upper()
+
+        # ¿hay columna solo_staff?
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='inv' AND table_name='incidencia_mensajes' AND column_name='solo_staff'
+        """)
+        has_solo = bool(cur.fetchone())
+
+        base = f"""
+          SELECT m.msg_id, m.inc_id, m.mensaje, m.usuario, m.created_at,
+                 {'m.solo_staff' if has_solo else 'FALSE'} AS solo_staff,
+                 i.titulo, i.estado, i.reportado_por, i.asignado_a
+          FROM inv.incidencia_mensajes m
+          JOIN inv.incidencias i ON i.inc_id = m.inc_id
+          WHERE m.msg_id > %s
+            AND LOWER(m.usuario) <> LOWER(%s)
+        """
+
+        params: List[Any] = [int(since_id or 0), app_user]
+
+        if rol == "USUARIOS":
+            # solo incidencias propias y ocultar privados
+            base += " AND i.reportado_por=%s"
+            params.append(app_user)
+            if has_solo:
+                base += " AND COALESCE(m.solo_staff,false)=false"
+        elif rol == "PRACTICANTE":
+            # solo asignadas al practicante
+            base += " AND i.asignado_a=%s"
+            params.append(app_user)
+        else:
+            # ADMIN ve todo
+            pass
+
+        base += " ORDER BY m.msg_id ASC LIMIT 100"
+
+        cur.execute(base, params)
+        rows = cur.fetchall()
+
+        items: List[Dict[str, Any]] = []
+        last_id = since_id or 0
+        for r in rows:
+            last_id = max(last_id, int(r[0]))
+            items.append({
+                "msg_id": int(r[0]),
+                "inc_id": int(r[1]),
+                "mensaje": r[2],
+                "usuario": r[3],
+                "created_at": r[4],
+                "solo_staff": bool(r[5]),
+                "titulo": r[6],
+                "estado": r[7],
+            })
+
+        # si no hay nuevos y es el primer arranque, fijar al tope actual
+        if not rows and (since_id is None or since_id == 0):
+            cur.execute("SELECT COALESCE(MAX(msg_id),0) FROM inv.incidencia_mensajes")
+            last_id = int(cur.fetchone()[0] or 0)
+
+        return {"items": items, "last_id": last_id}

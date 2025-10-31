@@ -206,36 +206,60 @@ def remove_photo(app_user: str, item_id: int, url_or_path: str) -> Optional[str]
 # Sugerencia de código
 # =========================
 def suggest_next_code(app_user: str, clase: str, tipo_nombre: str, area_id: int) -> str:
-    with get_conn(app_user) as (conn, cur):
-        cur.execute(
-            "SELECT item_tipo_id FROM inv.item_tipos WHERE clase=%s AND lower(nombre)=lower(%s)",
-            (clase, tipo_nombre),
-        )
-        t = cur.fetchone()
-        if not t:
-            return f"{tipo_nombre.upper()}01"
-        tipo_id = int(t[0])
+    """
+    Sugerir el siguiente 'item_codigo' para el par (clase, tipo_nombre) dentro de un area_id.
+    Ejemplo: tipo_nombre='DISCO' -> DISCO01, DISCO02, ...
+    """
+    prefix = (tipo_nombre or "").strip().upper()  # prefijo textual del tipo
 
-        prefix = tipo_nombre.upper()
-        cur.execute(
-            """
+    with get_conn(app_user) as (conn, cur):
+        # 1) Resolver item_tipo_id a partir de clase + tipo_nombre (case-insensitive)
+        cur.execute("""
+            SELECT it.item_tipo_id
+            FROM inv.item_tipos it
+            WHERE it.clase = %s AND lower(it.nombre) = lower(%s)
+            LIMIT 1
+        """, (clase, tipo_nombre))
+        row = cur.fetchone()
+        if not row:
+            # Si no existe el tipo, devolvemos prefijo NN empezando en 01
+            return f"{prefix}01"
+
+        item_tipo_id = int(row[0])
+
+        # 2) Tomar últimos codigos existentes para ESE tipo y ESA area
+        #    - Primero ordenamos por creado_en DESC si existe, y respaldo por item_id DESC
+        #    - Limit 200 para no traer demasiados (suficiente para calcular el último número)
+        cur.execute("""
             SELECT i.item_codigo
             FROM inv.items i
             WHERE i.item_tipo_id = %s
-            ORDER BY i.created_at DESC
+              AND i.area_id = %s
+            ORDER BY i.creado_en DESC NULLS LAST, i.item_id DESC
             LIMIT 200
-            """,
-            (tipo_id,),
-        )
-        codes = [row[0] for row in cur.fetchall()]
+        """, (item_tipo_id, int(area_id)))
+        rows = cur.fetchall()
 
+    # 3) Buscar el mayor sufijo numérico para códigos que empiezan con el prefijo
     last_num = 0
-    for c in codes:
-        if c and c.upper().startswith(prefix):
-            tail = c[len(prefix):]
-            digits = "".join(ch for ch in tail if ch.isdigit()) or "0"
+    if rows:
+        for (code,) in rows:
+            if not code:
+                continue
+            c = str(code).strip().upper()
+            if not c.startswith(prefix):
+                continue
+            tail = c[len(prefix):]  # lo que viene después del prefijo
+            # Extraer solo dígitos del tail (p.ej. '001', '12', 'A12' -> '12')
+            digits = "".join(ch for ch in tail if ch.isdigit())
+            if not digits:
+                continue
             try:
-                last_num = max(last_num, int(digits))
+                n = int(digits)
+                if n > last_num:
+                    last_num = n
             except ValueError:
                 pass
+
+    # 4) Siguiente número, con 2 dígitos (ajusta a 3 o más si quieres)
     return f"{prefix}{last_num + 1:02d}"

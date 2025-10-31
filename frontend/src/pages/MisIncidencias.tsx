@@ -1,4 +1,4 @@
-// src/pages/MisIncidencias.tsx
+// frontend/src/pages/MisIncidencias.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   listarMisIncidencias,
@@ -8,8 +8,8 @@ import {
   type Incidencia,
 } from "../api/incidencias";
 import { getProfile, updateEmail } from "../api/profile";
+import IncidenciaNotifier from "../components/IncidenciaNotifier";
 
-/* ====== tema ====== */
 const section = "rounded-2xl border border-slate-200 bg-white shadow-sm";
 const fieldBase =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-[15px] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-300/40 focus:border-emerald-300/60 transition";
@@ -36,18 +36,15 @@ export default function MisIncidencias() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // perfil/email
   const [email, setEmail] = useState<string>("");
   const [haveEmail, setHaveEmail] = useState<boolean>(true);
   const [savingMail, setSavingMail] = useState(false);
 
-  // form nueva
   const [showNew, setShowNew] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [desc, setDesc] = useState("");
   const [equipoId, setEquipoId] = useState<number | "">("");
 
-  // detalle
   const [sel, setSel] = useState<(Incidencia & { mensajes: any[] }) | null>(null);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
@@ -73,9 +70,7 @@ export default function MisIncidencias() {
       const p = await getProfile();
       setHaveEmail(!!p.email);
       setEmail(p.email || "");
-    } catch {
-      // si falla, no bloquea
-    }
+    } catch {}
   }
 
   useEffect(() => { load(); }, [page]); // eslint-disable-line
@@ -132,10 +127,24 @@ export default function MisIncidencias() {
       await agregarMensaje(sel.inc_id, note.trim());
       setNote("");
       await open(sel.inc_id);
+      // dispara evento para que otros tabs/vistas refresquen si corresponde
+      window.dispatchEvent(new CustomEvent("inc:new_msg", { detail: { inc_id: sel.inc_id, created_at: new Date().toISOString() } }));
     } finally {
       setSending(false);
     }
   }
+
+  // === Si llega un evento de mensaje nuevo y este modal está abierto, refresca ===
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const e = ev as CustomEvent<{ inc_id: number }>;
+      if (sel && e.detail?.inc_id === sel.inc_id) {
+        open(sel.inc_id);
+      }
+    };
+    window.addEventListener("inc:new_msg", handler as EventListener);
+    return () => window.removeEventListener("inc:new_msg", handler as EventListener);
+  }, [sel]);
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-5 space-y-5">
@@ -149,7 +158,6 @@ export default function MisIncidencias() {
         </div>
       </div>
 
-      {/* Banner para pedir correo 1 sola vez */}
       {!haveEmail && (
         <div className="p-4 rounded-xl border border-amber-300 bg-amber-50">
           <div className="text-sm font-medium mb-1">Falta tu email de contacto</div>
@@ -211,7 +219,6 @@ export default function MisIncidencias() {
         )}
       </div>
 
-      {/* Modal nueva */}
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setShowNew(false)} />
@@ -243,7 +250,6 @@ export default function MisIncidencias() {
         </div>
       )}
 
-      {/* Modal detalle + chat */}
       {sel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setSel(null)} />
@@ -277,7 +283,14 @@ export default function MisIncidencias() {
                   {sel.mensajes?.length ? (
                     sel.mensajes.map((m: any, i: number) => (
                       <div key={i} className="text-sm p-2 rounded-lg bg-white ring-1 ring-slate-200">
-                        <div className="text-slate-700">{m.mensaje}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-slate-700">{m.mensaje}</div>
+                          {m.solo_staff && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                              Privado · soporte
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-400 mt-1">
                           {m.usuario} · {new Date(m.created_at).toLocaleString()}
                         </div>
@@ -303,6 +316,9 @@ export default function MisIncidencias() {
           </div>
         </div>
       )}
+
+      {/* Notificador global: muestra burbuja y permite abrir el chat */}
+      <IncidenciaNotifier onOpenIncidencia={(id) => open(id)} />
     </div>
   );
 }
